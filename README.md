@@ -1,25 +1,61 @@
-# Planes Project Setup
+# Planes
 
-## Requirements
-* Python 3.10 or later
+A small, mobile-first local web interface for an ADS-B receiver running readsb/tar1090.
 
-## Installation & Setup
+## Features in v0.0.3
 
-1. **Download project files** into a folder and **unzip** them.
-2. Open your terminal or command line and **change directory (`cd`)** to the project folder.
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Run the server:
-   ```bash
-   python main.py
-   ```
+- Live aircraft count and feed status
+- Configurable aircraft JSON URL
+- Search and sorting
+- Device-local favourites
+- Configurable refresh interval
+- Aircraft detail pages with optional ASBDB callsign/route information
+- Statistics page
+- Dark cyan, light and system themes
+- Responsive mobile layout
+- Keyboard-friendly navigation, skip link, visible focus, semantic headings and table headers
+- Reduced-motion support and status announcements for dynamic updates
 
-## How to Find Your IP Address
+## Run
 
-To access the server from other devices on your home network, find your local IP address:
-* **Windows:** Open Command Prompt and type `ipconfig` (look for IPv4 Address).
-* **Mac / Linux:** Open Terminal and type `hostname -I` or `ip4`.
+Python 3.10+ is required.
 
-Open your web browser and navigate to: `http://<your_local_ip>:8000`
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+Then open:
+
+```text
+http://<your-pi-ip>:8000
+```
+
+The default aircraft feed is:
+
+```text
+http://127.0.0.1:8504/data/aircraft.json
+```
+
+This is designed for the existing readsb/tar1090 setup, so the web app reads the feed rather than trying to take control of the RTL-SDR itself.
+
+## Settings
+
+Use **Settings** in the web interface to change the aircraft feed URL, refresh interval and ASBDB route lookups. Theme selection is saved in the current browser.
+
+## Accessibility testing
+
+The project is designed to be checked with the WAVE browser extension at the rendered-page level. Test at least:
+
+- Dashboard
+- Statistics
+- Settings
+- Aircraft details
+- Mobile-width viewport
+- Keyboard-only navigation
+- 200% zoom/reflow
+- Light and dark themes
+
+WAVE is an automated aid, not a complete accessibility certification; manual keyboard and visual checks are still required.

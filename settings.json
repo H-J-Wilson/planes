@@ -1,0 +1,6 @@
+{
+  "aircraft_data_url": "http://127.0.0.1:8504/data/aircraft.json",
+  "refresh_seconds": 5,
+  "asbdb_enabled": true,
+  "asbdb_cache_seconds": 30
+}
