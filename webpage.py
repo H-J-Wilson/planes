@@ -2,6 +2,7 @@ import datetime as dt
 import html
 import ipaddress
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -26,6 +27,9 @@ DEFAULT_SETTINGS = {
 }
 ASBDB_BASE = "https://api.adsbdb.com/v0/callsign/"
 APP_VERSION = "0.0.5"
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s planes: %(message)s")
+logger = logging.getLogger("planes")
 
 
 def load_settings() -> dict[str, Any]:
@@ -62,7 +66,11 @@ def get_aircraft_data() -> tuple[dict[str, Any], float | None]:
         if not isinstance(data, dict) or not isinstance(data.get("aircraft"), list):
             raise ValueError("Aircraft feed did not return the expected JSON structure.")
         return data, time.monotonic() - started
-    except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError):
+    except requests.RequestException as exc:
+        logger.warning("Aircraft feed request failed: %s", exc)
+        return {"aircraft": []}, None
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        logger.warning("Aircraft feed returned invalid data: %s", exc)
         return {"aircraft": []}, None
 
 
@@ -250,7 +258,7 @@ def dashboard_content() -> str:
             const res = await fetch('/api/dashboard-data', {{cache:'no-store'}}); if (!res.ok) throw new Error('HTTP '+res.status);
             const payload = await res.json(); aircraftData = payload.aircraft || []; count.textContent = aircraftData.length; status.textContent='Feed responding';
             if (typeof payload.now === 'number') {{ const age = Math.max(0, Date.now()/1000 - payload.now); dataAge.textContent = age < 2 ? 'Fresh' : Math.round(age) + 's'; }} else dataAge.textContent = '—'; status.className='status-ok'; last.textContent=new Date().toLocaleTimeString(); renderRows(); tableStatus.textContent = 'Aircraft list updated.';
-          }} catch (e) {{ status.textContent='Feed unavailable'; status.className='status-error'; last.textContent='Connection failed'; tableStatus.textContent='Unable to update aircraft data.'; }}
+          }} catch (e) {{ status.textContent='Feed unavailable'; status.className='status-error'; last.textContent='Connection failed'; tableStatus.textContent='Unable to update aircraft data. Showing the last successful data.'; }}
         }}
         search.addEventListener('input', renderRows); sort.addEventListener('change', renderRows); filter.addEventListener('change', renderRows); minAltitude.addEventListener('input', renderRows); minSpeed.addEventListener('input', renderRows); document.getElementById('clear-filters').addEventListener('click', () => {{ search.value=''; filter.value='all'; minAltitude.value=''; minSpeed.value=''; sort.value='flight'; renderRows(); }}); document.getElementById('refresh-now').addEventListener('click', refresh); bindButtons();
         refresh(); setInterval(refresh, REFRESH_SECONDS * 1000);
@@ -323,8 +331,10 @@ def asbdb_lookup(callsign: str) -> dict[str, Any] | None:
         if isinstance(route, dict):
             _asbdb_cache[callsign] = (now, route)
             return route
-    except (requests.RequestException, ValueError, TypeError):
-        pass
+    except requests.RequestException as exc:
+        logger.info("ASBDB request failed for %s: %s", callsign, exc)
+    except (ValueError, TypeError) as exc:
+        logger.info("ASBDB returned invalid data for %s: %s", callsign, exc)
     return None
 
 
@@ -359,7 +369,7 @@ def read_aircraft_details(hex_code: str):
     safe_hex = html.escape(hex_code)
     content = f'''<section class="panel detail-panel"><div id="live-details" role="region" aria-live="polite" aria-label="Live aircraft details"><p class="loading">Loading live aircraft data…</p></div><a class="back-link" href="/">← Back to dashboard</a></section>
     <script>
-      async function refreshAircraft() {{ try {{ const res=await fetch('/api/aircraft/{safe_hex}',{{cache:'no-store'}}); document.getElementById('live-details').innerHTML=await res.text(); }} catch {{ document.getElementById('live-details').innerHTML='<div class="notice error">Unable to refresh aircraft data.</div>'; }} }}
+      async function refreshAircraft() {{ try {{ const res=await fetch('/api/aircraft/'+encodeURIComponent({json.dumps(hex_code)}),{{cache:'no-store'}}); document.getElementById('live-details').innerHTML=await res.text(); }} catch {{ document.getElementById('live-details').innerHTML='<div class="notice error">Unable to refresh aircraft data.</div>'; }} }}
       refreshAircraft(); setInterval(refreshAircraft, REFRESH_SECONDS*1000);
     </script>'''
     return page("Aircraft Details", content)
