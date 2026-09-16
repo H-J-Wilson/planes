@@ -16,7 +16,7 @@ A small, mobile-first local web interface for an ADS-B receiver running readsb/t
 - Keyboard-friendly navigation, skip link, visible focus, semantic headings and table headers
 - Reduced-motion support and status announcements for dynamic updates
 
-## Run
+## Runing
 
 Python 3.10+ is required.
 
