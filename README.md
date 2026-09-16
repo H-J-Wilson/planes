@@ -10,6 +10,77 @@ Planes is designed to sit alongside an existing ADS-B setup: it reads the aircra
 
 v0.0.5 adds a feed-testing tool in Settings, clearer live feed freshness information and continued documentation/stability improvements.
 
+## Updates
+
+New versions of Planes are published through GitHub Releases. Updating regularly is recommended so you receive bug fixes, improvements and new features.
+
+### Check your installed version
+
+The current application version is shown in the interface. You can also check the Git branch/tag you are running with:
+
+```bash
+cd ~/planes
+git status
+git describe --tags --always
+```
+
+### Update a normal Planes installation
+
+If you installed Planes by cloning this repository, stop the running Planes process first, then:
+
+```bash
+cd ~/planes
+git status
+git pull
+source venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+If the update changes Python dependencies, the `pip install -r requirements.txt` step makes sure the virtual environment has the required versions.
+
+### Before updating
+
+Run:
+
+```bash
+git status
+```
+
+If it reports local changes, **do not blindly run `git pull`**. Save or back up your work first. This is especially important if you have edited `webpage.py` or other project files yourself.
+
+Your local settings are intended to remain separate from the application code. If you have customised the installation, keep a backup of any important configuration before a major update.
+
+### Updating to a specific release
+
+To use a particular tagged release:
+
+```bash
+cd ~/planes
+git fetch --tags
+git checkout v0.0.5
+source venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+Replace `v0.0.5` with the release you want.
+
+For normal use, staying on `main` gives you the latest merged development changes. For a more predictable installation, use a numbered release tag.
+
+### After updating
+
+Check that:
+
+1. Planes starts without errors.
+2. The Dashboard loads.
+3. Aircraft are appearing.
+4. **Settings → Test feed** reports that the aircraft feed is working.
+5. Statistics and aircraft details still load correctly.
+
+If something breaks after an update, check the **Common problems and fixes** section below and keep the terminal error output when reporting the problem.
+
+
 ## Current features
 
 - Live aircraft count and feed status
