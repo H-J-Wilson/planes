@@ -8,7 +8,7 @@ Planes is designed to sit alongside an existing ADS-B setup: it reads the aircra
 
 **v0.0.5**
 
-v0.0.5 adds a feed-testing tool in Settings, clearer live feed freshness information and continued documentation/stability improvements.
+v0.0.5 adds a feed-testing tool in Settings, clearer live feed freshness information, improved aircraft search/filtering and continued documentation/stability improvements.
 
 ## Current features
 
@@ -18,6 +18,8 @@ v0.0.5 adds a feed-testing tool in Settings, clearer live feed freshness informa
 - Sorting
 - Device-local favourites
 - Configurable refresh interval
+- Improved aircraft search across callsign, type, description, registration and HEX
+- Dashboard filters for movement, climbing, descending, valid position, favourites, minimum altitude and minimum speed
 - Aircraft detail pages
 - ICAO/HEX, callsign, type, squawk, altitude, speed, position, distance and bearing information when supplied by the feed
 - Optional ASBDB callsign/route information
@@ -574,6 +576,9 @@ The exact repository contents can change between versions.
 
 ### v0.0.5
 
+- Improved Dashboard search to cover callsign, type, description, registration and HEX.
+- Added Dashboard filters for movement, climb/descent, valid position, favourites, minimum altitude and minimum speed.
+- Added distance sorting.
 - Added **Test feed** in Settings to check the configured aircraft JSON endpoint.
 - Added live **data age** information to the Dashboard when the readsb feed provides a timestamp.
 - Added clearer feed-test error handling.
