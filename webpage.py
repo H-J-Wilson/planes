@@ -109,6 +109,7 @@ def page(title: str, content: str, active: str = "") -> str:
         <a class="nav-link {"active" if active == "dashboard" else ""}" href="/">Dashboard</a>
         <a class="nav-link {"active" if active == "statistics" else ""}" href="/statistics">Statistics</a>
         <a class="nav-link {"active" if active == "settings" else ""}" href="/settings">Settings</a>
+        <a class="nav-link {"active" if active == "documentation" else ""}" href="/documentation">Documentation</a>
         <a class="nav-link {"active" if active == "about" else ""}" href="/about">About</a>
       </nav>
     </header>'''
@@ -120,7 +121,7 @@ def page(title: str, content: str, active: str = "") -> str:
   <meta name="description" content="A local live aircraft tracker powered by readsb and tar1090.">
   <title>{clean(title)} · Planes</title>
   <link rel="icon" href="/static/images/airplane-svgrepo-com.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/output.css?v=0.0.3">
+  <link rel="stylesheet" href="/static/output.css?v=0.0.4">
   <script>
     (() => {{
       const saved = localStorage.getItem('planes-theme') || 'system';
@@ -146,7 +147,7 @@ def page(title: str, content: str, active: str = "") -> str:
         <a href="https://github.com/wiedehopf/tar1090" rel="noopener noreferrer">tar1090</a>
         <a href="/contact">Contact</a>
       </div>
-      <div class="footer-meta"><span>v0.0.3</span><span>Updated {now}</span><span>Refresh {refresh}s</span></div>
+      <div class="footer-meta"><span>v0.0.4</span><span>Updated {now}</span><span>Refresh {refresh}s</span></div>
     </footer>
   </div>
   <script>
@@ -392,6 +393,68 @@ def update_settings(payload: dict[str, Any]):
     except (ValueError, TypeError) as exc:
         return JSONResponse({"detail": str(exc)}, status_code=400)
 
+
+@app.get("/documentation", response_class=HTMLResponse)
+def read_documentation():
+    content = '''<section class="panel prose">
+      <p class="eyebrow">PLANES DOCUMENTATION</p>
+      <h2>What is Planes?</h2>
+      <p>Planes is a local, mobile-first aircraft-tracking web interface designed to work with an ADS-B receiver running readsb/tar1090. It reads aircraft JSON from a configurable feed and presents the live receiver data in a simple web interface.</p>
+      <h2>Dashboard</h2>
+      <p>The Dashboard shows aircraft currently present in the configured receiver feed.</p>
+      <ul class="clean-list">
+        <li><strong>Aircraft count</strong> shows how many aircraft are currently in the feed.</li>
+        <li><strong>Search</strong> filters by flight/callsign, aircraft type or ICAO HEX.</li>
+        <li><strong>Sorting</strong> can arrange aircraft by flight, type, speed or altitude.</li>
+        <li><strong>Favourites</strong> let you mark aircraft on this device. Favourite data is stored by the browser.</li>
+        <li><strong>View details</strong> opens the live detail page for an aircraft.</li>
+        <li><strong>Refresh now</strong> requests the latest receiver data immediately.</li>
+        <li><strong>Automatic updates</strong> happen at the configured refresh interval.</li>
+      </ul>
+      <h2>Aircraft details</h2>
+      <p>Select <strong>View details</strong> for an aircraft to see the information available from the receiver.</p>
+      <ul class="clean-list">
+        <li><strong>HEX / ICAO</strong> identifies the aircraft's Mode-S address.</li>
+        <li><strong>Callsign</strong> is the flight identifier when transmitted.</li>
+        <li><strong>Aircraft type</strong> uses the receiver's type or description fields when available.</li>
+        <li><strong>Squawk</strong> shows the aircraft's transponder code when available.</li>
+        <li><strong>Altitude and speed</strong> show the latest barometric altitude and ground speed supplied by the feed.</li>
+        <li><strong>Position</strong> shows latitude and longitude when available.</li>
+        <li><strong>Distance and bearing</strong> are receiver-relative values when supplied by the feed.</li>
+        <li><strong>Route information</strong> can show scheduled origin, destination and airline data from ASBDB when a callsign can be matched.</li>
+      </ul>
+      <h2>Statistics</h2>
+      <p>The Statistics page summarises the aircraft currently visible to the receiver.</p>
+      <ul class="clean-list">
+        <li><strong>Aircraft visible</strong> is the current number of aircraft entries.</li>
+        <li><strong>Average altitude</strong> is calculated from aircraft with numeric barometric altitude data.</li>
+        <li><strong>Average speed</strong> is calculated from aircraft with numeric ground-speed data.</li>
+        <li><strong>Feed response</strong> is the approximate time taken by the web server to request the configured aircraft JSON feed.</li>
+        <li><strong>Aircraft types</strong> counts the type/description values currently present in the feed.</li>
+        <li><strong>Receiver connection</strong> shows the active feed URL, refresh interval and ASBDB setting.</li>
+      </ul>
+      <h2>Settings</h2>
+      <ul class="clean-list">
+        <li><strong>Aircraft data URL</strong> controls where Planes reads its aircraft JSON. The default <code>http://127.0.0.1:8504/data/aircraft.json</code> means the readsb/tar1090 feed is running on the same Raspberry Pi as Planes.</li>
+        <li><strong>Refresh interval</strong> controls how often the browser asks Planes for fresh data.</li>
+        <li><strong>ASBDB route lookups</strong> enables or disables scheduled route/airline lookups on aircraft detail pages.</li>
+        <li><strong>Theme</strong> controls the browser-side appearance preference and does not change the receiver.</li>
+      </ul>
+      <h2>Data sources</h2>
+      <ul class="clean-list">
+        <li><strong>readsb / tar1090</strong> supplies the live aircraft JSON used by the dashboard.</li>
+        <li><strong>ASBDB</strong> supplies optional scheduled flight-route information based on callsign. It is supplementary information and is not the live aircraft position source.</li>
+      </ul>
+      <h2>Troubleshooting</h2>
+      <div class="notice"><p><strong>No aircraft showing?</strong><br>Check that readsb is running and that the configured aircraft-data URL returns valid JSON containing an <code>aircraft</code> list.</p></div>
+      <div class="notice"><p><strong>Aircraft type says Unknown?</strong><br>The receiver has not supplied usable type or description information for that aircraft. Planes displays the available receiver data rather than guessing a type.</p></div>
+      <div class="notice"><p><strong>Route unavailable?</strong><br>ASBDB may not have scheduled route information for the callsign, or ASBDB lookups may be disabled in Settings.</p></div>
+      <div class="notice"><p><strong>Feed unavailable?</strong><br>Check the aircraft-data URL in Settings and verify the readsb/tar1090 service is reachable from the machine running Planes.</p></div>
+      <h2>Version</h2>
+      <p><strong>Planes v0.0.4</strong></p>
+      <p>This documentation describes the functionality included in the v0.0.4 application.</p>
+    </section>'''
+    return page("Documentation", content, "documentation")
 
 @app.get("/about", response_class=HTMLResponse)
 def read_about():
