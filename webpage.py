@@ -182,9 +182,15 @@ def dashboard_content() -> str:
     status_class = "status-ok" if elapsed is not None else "status-error"
     rows = aircraft_rows(aircraft)
     return f'''<section class="toolbar" aria-label="Aircraft table controls">
-      <div class="search-wrap"><label for="aircraft-search">Search aircraft</label><input id="aircraft-search" type="search" placeholder="Flight, type or hex…" autocomplete="off"></div>
-      <div><label for="sort-select">Sort by</label><select id="sort-select"><option value="flight">Flight</option><option value="type">Aircraft</option><option value="speed">Speed</option><option value="altitude">Altitude</option></select></div>
+      <div class="search-wrap"><label for="aircraft-search">Search aircraft</label><input id="aircraft-search" type="search" placeholder="Flight, type, registration or hex…" autocomplete="off"></div>
+      <div><label for="sort-select">Sort by</label><select id="sort-select"><option value="flight">Flight</option><option value="type">Aircraft</option><option value="speed">Speed</option><option value="altitude">Altitude</option><option value="distance">Distance</option></select></div>
       <button id="refresh-now" class="button secondary" type="button">Refresh now</button>
+    </section>
+    <section class="filter-bar" aria-label="Aircraft filters">
+      <div><label for="aircraft-filter">Show</label><select id="aircraft-filter"><option value="all">All aircraft</option><option value="moving">Moving</option><option value="climbing">Climbing</option><option value="descending">Descending</option><option value="position">Valid position</option><option value="favourite">Favourites</option></select></div>
+      <div><label for="min-altitude">Minimum altitude (ft)</label><input id="min-altitude" type="number" min="0" step="100" placeholder="Any"></div>
+      <div><label for="min-speed">Minimum speed (kt)</label><input id="min-speed" type="number" min="0" step="5" placeholder="Any"></div>
+      <button id="clear-filters" class="button secondary" type="button">Clear filters</button>
     </section>
     <section class="stats-strip" aria-label="Live receiver status">
       <div class="metric"><span>Aircraft</span><strong id="aircraft-count">{count}</strong></div>
@@ -210,6 +216,9 @@ def dashboard_content() -> str:
         const dataAge = document.getElementById('data-age');
         const search = document.getElementById('aircraft-search');
         const sort = document.getElementById('sort-select');
+        const filter = document.getElementById('aircraft-filter');
+        const minAltitude = document.getElementById('min-altitude');
+        const minSpeed = document.getElementById('min-speed');
         const tableStatus = document.getElementById('table-status');
         let rows = [...tbody.querySelectorAll('tr[data-aircraft-row]')];
         let aircraftData = [];
@@ -229,8 +238,9 @@ def dashboard_content() -> str:
         function renderRows() {{
           const q = search.value.trim().toLowerCase();
           const key = sort.value;
-          const list = [...aircraftData].filter(a => {{ const text = [a.flight || '', a.t || '', a.desc || '', a.hex || ''].join(' ').toLowerCase(); return text.includes(q); }});
-          list.sort((a,b) => {{ if (key === 'speed') return Number(b.gs || -1) - Number(a.gs || -1); if (key === 'altitude') return Number(b.alt_baro || -1) - Number(a.alt_baro || -1); if (key === 'type') return String(a.t || a.desc || '').localeCompare(String(b.t || b.desc || '')); return String(a.flight || '').localeCompare(String(b.flight || '')); }});
+          const minAlt = Number(minAltitude.value) || 0; const minSpd = Number(minSpeed.value) || 0; const favs = new Set(favouriteState());
+          const list = [...aircraftData].filter(a => {{ const text = [a.flight || '', a.t || '', a.desc || '', a.hex || '', a.r || ''].join(' ').toLowerCase(); const vr = Number(a.baro_rate ?? a.geom_rate ?? 0); const gs = Number(a.gs ?? 0); const alt = Number(a.alt_baro ?? -1); const hasPosition = Number.isFinite(Number(a.lat)) && Number.isFinite(Number(a.lon)); const matchesFilter = filter.value === 'all' || (filter.value === 'moving' && gs > 1) || (filter.value === 'climbing' && vr > 100) || (filter.value === 'descending' && vr < -100) || (filter.value === 'position' && hasPosition) || (filter.value === 'favourite' && favs.has(String(a.hex || '').toLowerCase())); return text.includes(q) && alt >= minAlt && gs >= minSpd && matchesFilter; }});
+          list.sort((a,b) => {{ if (key === 'speed') return Number(b.gs || -1) - Number(a.gs || -1); if (key === 'altitude') return Number(b.alt_baro || -1) - Number(a.alt_baro || -1); if (key === 'type') return String(a.t || a.desc || '').localeCompare(String(b.t || b.desc || '')); if (key === 'distance') return Number(b.r_dst || -1) - Number(a.r_dst || -1); return String(a.flight || '').localeCompare(String(b.flight || '')); }});
           tbody.innerHTML = list.length ? list.map(a => {{ const flight = (a.flight || "Unknown").trim(); const type = a.t || a.desc || "Unknown"; const hex = (a.hex || "").toLowerCase(); return "<tr data-aircraft-row><td><span class=\"mobile-label\">Flight</span><strong>"+esc(flight)+"</strong></td><td><span class=\"mobile-label\">Aircraft</span>"+esc(type)+"</td><td><span class=\"mobile-label\">Speed</span>"+esc(a.gs ?? "—")+" <span class=\"unit\">kt</span></td><td><span class=\"mobile-label\">Altitude</span>"+esc(a.alt_baro ?? "—")+" <span class=\"unit\">ft</span></td><td class=\"actions\"><button type=\"button\" class=\"favourite-button\" data-favourite=\""+esc(hex)+"\" aria-pressed=\"false\">☆</button> <a class=\"text-link\" href=\"/aircraft/"+encodeURIComponent(hex)+"\">View details</a></td></tr>"; }}).join("") : "<tr><td colspan=\"5\" class=\"empty-cell\">No aircraft match your search.</td></tr>";
           bindButtons();
         }}
@@ -242,7 +252,7 @@ def dashboard_content() -> str:
             if (typeof payload.now === 'number') {{ const age = Math.max(0, Date.now()/1000 - payload.now); dataAge.textContent = age < 2 ? 'Fresh' : Math.round(age) + 's'; }} else dataAge.textContent = '—'; status.className='status-ok'; last.textContent=new Date().toLocaleTimeString(); renderRows(); tableStatus.textContent = 'Aircraft list updated.';
           }} catch (e) {{ status.textContent='Feed unavailable'; status.className='status-error'; last.textContent='Connection failed'; tableStatus.textContent='Unable to update aircraft data.'; }}
         }}
-        search.addEventListener('input', renderRows); sort.addEventListener('change', renderRows); document.getElementById('refresh-now').addEventListener('click', refresh); bindButtons();
+        search.addEventListener('input', renderRows); sort.addEventListener('change', renderRows); filter.addEventListener('change', renderRows); minAltitude.addEventListener('input', renderRows); minSpeed.addEventListener('input', renderRows); document.getElementById('clear-filters').addEventListener('click', () => {{ search.value=''; filter.value='all'; minAltitude.value=''; minSpeed.value=''; sort.value='flight'; renderRows(); }}); document.getElementById('refresh-now').addEventListener('click', refresh); bindButtons();
         refresh(); setInterval(refresh, REFRESH_SECONDS * 1000);
       }})();
     </script>'''
