@@ -6,9 +6,9 @@ Planes is designed to sit alongside an existing ADS-B setup: it reads the aircra
 
 ## Current version
 
-**v0.0.4**
+**v0.0.5**
 
-v0.0.4 adds a dedicated Documentation page and expands the in-app guidance.
+v0.0.5 adds a feed-testing tool in Settings, clearer live feed freshness information and continued documentation/stability improvements.
 
 ## Current features
 
@@ -397,7 +397,7 @@ WAVE is an automated aid, not a complete accessibility certification; manual key
 
 ## Future roadmap
 
-The following are planned ideas and are **not all implemented in v0.0.4**.
+The following are planned ideas and are **not all implemented in v0.0.5**.
 
 ### Aircraft and tracking
 
@@ -571,6 +571,13 @@ planes/
 The exact repository contents can change between versions.
 
 ## Version history
+
+### v0.0.5
+
+- Added **Test feed** in Settings to check the configured aircraft JSON endpoint.
+- Added live **data age** information to the Dashboard when the readsb feed provides a timestamp.
+- Added clearer feed-test error handling.
+- Updated application version references and documentation.
 
 ### v0.0.4
 
