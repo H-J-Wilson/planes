@@ -25,6 +25,7 @@ DEFAULT_SETTINGS = {
     "asbdb_cache_seconds": 30,
 }
 ASBDB_BASE = "https://api.adsbdb.com/v0/callsign/"
+APP_VERSION = "0.0.5"
 
 
 def load_settings() -> dict[str, Any]:
@@ -121,7 +122,7 @@ def page(title: str, content: str, active: str = "") -> str:
   <meta name="description" content="A local live aircraft tracker powered by readsb and tar1090.">
   <title>{clean(title)} · Planes</title>
   <link rel="icon" href="/static/images/airplane-svgrepo-com.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/output.css?v=0.0.4">
+  <link rel="stylesheet" href="/static/output.css?v={APP_VERSION}">
   <script>
     (() => {{
       const saved = localStorage.getItem('planes-theme') || 'system';
@@ -147,7 +148,7 @@ def page(title: str, content: str, active: str = "") -> str:
         <a href="https://github.com/wiedehopf/tar1090" rel="noopener noreferrer">tar1090</a>
         <a href="/contact">Contact</a>
       </div>
-      <div class="footer-meta"><span>v0.0.4</span><span>Updated {now}</span><span>Refresh {refresh}s</span></div>
+      <div class="footer-meta"><span>v{APP_VERSION}</span><span>Updated {now}</span><span>Refresh {refresh}s</span></div>
     </footer>
   </div>
   <script>
@@ -189,6 +190,7 @@ def dashboard_content() -> str:
       <div class="metric"><span>Aircraft</span><strong id="aircraft-count">{count}</strong></div>
       <div class="metric"><span>Feed</span><strong id="feed-status" class="{status_class}">{status}</strong></div>
       <div class="metric"><span>Last check</span><strong id="last-check">Just now</strong></div>
+      <div class="metric"><span>Data age</span><strong id="data-age">—</strong></div>
     </section>
     <div id="table-status" class="sr-status" role="status" aria-live="polite"></div>
     <div class="table-card">
@@ -205,6 +207,7 @@ def dashboard_content() -> str:
         const count = document.getElementById('aircraft-count');
         const status = document.getElementById('feed-status');
         const last = document.getElementById('last-check');
+        const dataAge = document.getElementById('data-age');
         const search = document.getElementById('aircraft-search');
         const sort = document.getElementById('sort-select');
         const tableStatus = document.getElementById('table-status');
@@ -235,7 +238,8 @@ def dashboard_content() -> str:
         async function refresh() {{
           try {{
             const res = await fetch('/api/dashboard-data', {{cache:'no-store'}}); if (!res.ok) throw new Error('HTTP '+res.status);
-            const payload = await res.json(); aircraftData = payload.aircraft || []; count.textContent = aircraftData.length; status.textContent='Feed responding'; status.className='status-ok'; last.textContent=new Date().toLocaleTimeString(); renderRows(); tableStatus.textContent = 'Aircraft list updated.';
+            const payload = await res.json(); aircraftData = payload.aircraft || []; count.textContent = aircraftData.length; status.textContent='Feed responding';
+            if (typeof payload.now === 'number') {{ const age = Math.max(0, Date.now()/1000 - payload.now); dataAge.textContent = age < 2 ? 'Fresh' : Math.round(age) + 's'; }} else dataAge.textContent = '—'; status.className='status-ok'; last.textContent=new Date().toLocaleTimeString(); renderRows(); tableStatus.textContent = 'Aircraft list updated.';
           }} catch (e) {{ status.textContent='Feed unavailable'; status.className='status-error'; last.textContent='Connection failed'; tableStatus.textContent='Unable to update aircraft data.'; }}
         }}
         search.addEventListener('input', renderRows); sort.addEventListener('change', renderRows); document.getElementById('refresh-now').addEventListener('click', refresh); bindButtons();
@@ -253,7 +257,7 @@ def read_root():
 def dashboard_data(response: Response):
     response.headers["Cache-Control"] = "no-store"
     data, elapsed = get_aircraft_data()
-    return JSONResponse({"aircraft": data.get("aircraft", []), "feed_ok": elapsed is not None})
+    return JSONResponse({"aircraft": data.get("aircraft", []), "feed_ok": elapsed is not None, "now": data.get("now"), "response_ms": round(elapsed * 1000) if elapsed is not None else None})
 
 
 @app.get("/api/dashboard-table", response_class=HTMLResponse)
@@ -365,10 +369,11 @@ def read_settings():
       <div><label for="refresh-seconds">Refresh interval</label><select id="refresh-seconds" name="refresh_seconds">{''.join(f'<option value="{n}" {"selected" if int(settings.get("refresh_seconds",5)) == n else ""}>{n} seconds</option>' for n in [2,3,5,10,15,30,60])}</select></div>
       <label class="checkbox"><input id="asbdb-enabled" name="asbdb_enabled" type="checkbox" {"checked" if settings.get("asbdb_enabled",True) else ""}> Use ASBDB route lookups on aircraft detail pages</label>
       <fieldset><legend>Appearance</legend><label for="theme-select">Theme</label><select id="theme-select"><option value="system">Use system setting</option><option value="dark">Dark cyan</option><option value="light">Light</option></select><p class="field-help">This preference is saved only in this browser.</p></fieldset>
-      <div class="form-actions"><button class="button" type="submit">Save settings</button><span id="save-status" role="status" aria-live="polite"></span></div>
+      <div class="form-actions"><button class="button" type="submit">Save settings</button><button id="test-feed" class="button secondary" type="button">Test feed</button><span id="save-status" role="status" aria-live="polite"></span></div>
     </form>
     <section class="panel"><h2>What these settings do</h2><ul class="clean-list"><li><strong>Aircraft data URL</strong> controls where this server reads aircraft JSON.</li><li><strong>Refresh interval</strong> controls how often the browser requests fresh data.</li><li><strong>ASBDB</strong> adds scheduled route/airline information when a callsign can be matched.</li><li><strong>Theme</strong> changes the interface without changing the receiver configuration.</li></ul></section>
     <script>
+      document.getElementById('test-feed').addEventListener('click', async () => {{ const s=document.getElementById('save-status'); s.textContent='Testing feed…'; try {{ const r=await fetch('/api/test-feed',{{cache:'no-store'}}); const j=await r.json(); if(!r.ok) throw new Error(j.detail||'Feed test failed'); s.textContent='Feed OK · '+j.aircraft_count+' aircraft · '+j.response_ms+' ms'; }} catch(err) {{ s.textContent=err.message; }} }});
       document.getElementById('settings-form').addEventListener('submit', async e => {{ e.preventDefault(); const s=document.getElementById('save-status'); s.textContent='Saving…'; const body={{aircraft_data_url:document.getElementById('aircraft-data-url').value,refresh_seconds:Number(document.getElementById('refresh-seconds').value),asbdb_enabled:document.getElementById('asbdb-enabled').checked}}; try {{ const r=await fetch('/api/settings',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}}); const j=await r.json(); if(!r.ok) throw new Error(j.detail||'Save failed'); s.textContent='Saved. Reloading…'; setTimeout(()=>location.reload(),500); }} catch(err) {{ s.textContent=err.message; }} }});
     </script>'''
     return page("Settings", content, "settings")
@@ -377,6 +382,14 @@ def read_settings():
 @app.get("/api/settings")
 def get_settings():
     return load_settings()
+
+
+@app.get("/api/test-feed")
+def test_feed():
+    data, elapsed = get_aircraft_data()
+    if elapsed is None:
+        return JSONResponse({"detail": "Aircraft feed is unavailable or returned invalid JSON."}, status_code=502)
+    return {"ok": True, "aircraft_count": len(data.get("aircraft", [])), "response_ms": round(elapsed * 1000)}
 
 
 @app.post("/api/settings")
@@ -451,8 +464,8 @@ def read_documentation():
       <div class="notice"><p><strong>Route unavailable?</strong><br>ASBDB may not have scheduled route information for the callsign, or ASBDB lookups may be disabled in Settings.</p></div>
       <div class="notice"><p><strong>Feed unavailable?</strong><br>Check the aircraft-data URL in Settings and verify the readsb/tar1090 service is reachable from the machine running Planes.</p></div>
       <h2>Version</h2>
-      <p><strong>Planes v0.0.4</strong></p>
-      <p>This documentation describes the functionality included in the v0.0.4 application.</p>
+      <p><strong>Planes v0.0.5</strong></p>
+      <p>This documentation describes the functionality included in the v0.0.5 application.</p>
     </section>'''
     return page("Documentation", content, "documentation")
 
