@@ -59,3 +59,8 @@ The project is designed to be checked with the WAVE browser extension at the ren
 - Light and dark themes
 
 WAVE is an automated aid, not a complete accessibility certification; manual keyboard and visual checks are still required.
+
+
+## Comon Errors
+- Pip not installing requirements - make sure you are running as admin
+- Module not found - check that the requirements are installed using "pip package_name --version" use the requirements.t.t to check you are on the correct version and find the package names
