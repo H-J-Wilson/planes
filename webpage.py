@@ -577,8 +577,11 @@ def dashboard_content() -> str:
 
           const list = [...aircraftData].filter(a => {{
             if (!a || typeof a !== 'object') return false;
-            const meta = metadataCache.get(String(a.hex || '').toLowerCase()) || {{}};
-            const text = [a.flight || a.callsign || a.fn || '', a.t || '', a.desc || '', a.hex || '', a.r || a.registration || '', a.manufacturer || '', a.type || '', meta.type || '', meta.icao_type || '', meta.manufacturer || '', meta.registration || ''].join(' ').toLowerCase();
+            const metadata = metadataCache.get(String(a.hex || '').toLowerCase()) || {{}};
+            const identity = metadata.aircraft || {{}};
+            const route = metadata.flightroute || {{}};
+            const routeCallsign = route.callsign_icao || route.callsign_iata || '';
+            const text = [a.flight || a.callsign || a.fn || routeCallsign, a.t || '', a.desc || '', a.hex || '', a.r || a.registration || '', a.manufacturer || '', a.type || '', identity.type || '', identity.icao_type || '', identity.manufacturer || '', identity.registration || '', routeCallsign].join(' ').toLowerCase();
             const vr = Number(a.baro_rate ?? a.geom_rate);
             const gs = Number(a.gs);
             const alt = Number(a.alt_baro);
@@ -599,23 +602,28 @@ def dashboard_content() -> str:
           list.sort((a,b) => {{
             if (key === 'speed') return Number(b.gs ?? -1) - Number(a.gs ?? -1);
             if (key === 'altitude') return Number(b.alt_baro ?? -1) - Number(a.alt_baro ?? -1);
-            if (key === 'type') {
-              const am = metadataCache.get(String(a.hex || '').toLowerCase()) || {{}};
-              const bm = metadataCache.get(String(b.hex || '').toLowerCase()) || {{}};
-              return String(a.t || a.desc || am.type || am.icao_type || '').localeCompare(String(b.t || b.desc || bm.type || bm.icao_type || ''));
-            }
+            if (key === 'type') {{
+              const ameta = metadataCache.get(String(a.hex || '').toLowerCase()) || {{}};
+              const bmeta = metadataCache.get(String(b.hex || '').toLowerCase()) || {{}};
+              const aidentity = ameta.aircraft || {{}};
+              const bidentity = bmeta.aircraft || {{}};
+              return String(a.t || a.desc || aidentity.type || aidentity.icao_type || '').localeCompare(String(b.t || b.desc || bidentity.type || bidentity.icao_type || ''));
+            }}
             if (key === 'distance') return Number(b.r_dst ?? -1) - Number(a.r_dst ?? -1);
             return String(a.flight || a.callsign || a.fn || '').localeCompare(String(b.flight || b.callsign || b.fn || ''));
           }});
 
           tbody.innerHTML = list.length ? list.map(a => {{
             const safeAircraft = (a && typeof a === 'object') ? a : {{}};
-            const flight = String(safeAircraft.flight || safeAircraft.callsign || safeAircraft.fn || (safeAircraft.hex ? 'ICAO ' + String(safeAircraft.hex).toUpperCase() : 'Unknown')).trim();
-            const meta = metadataCache.get(String(safeAircraft.hex || '').toLowerCase()) || {{}};
-            const type = safeAircraft.t || safeAircraft.desc || meta.type || meta.icao_type || 'Looking up…';
+            const metadata = metadataCache.get(String(safeAircraft.hex || '').toLowerCase()) || {{}};
+            const identity = metadata.aircraft || {{}};
+            const route = metadata.flightroute || {{}};
+            const routeCallsign = String(route.callsign_icao || route.callsign_iata || '').trim();
+            const flight = String(safeAircraft.flight || safeAircraft.callsign || safeAircraft.fn || routeCallsign || (safeAircraft.hex ? 'ICAO ' + String(safeAircraft.hex).toUpperCase() : 'Unknown')).trim();
+            const type = safeAircraft.t || safeAircraft.desc || identity.type || identity.icao_type || 'Looking up…';
             const hex = String(safeAircraft.hex || '').toLowerCase();
-            const registration = String(safeAircraft.r || safeAircraft.registration || meta.registration || '').trim();
-            const manufacturer = String(meta.manufacturer || '').trim();
+            const registration = String(safeAircraft.r || safeAircraft.registration || identity.registration || '').trim();
+            const manufacturer = String(identity.manufacturer || '').trim();
             const typeExtra = manufacturer ? '<small class="unit">'+esc(manufacturer)+'</small>' : '';
             const favOn = favs.has(hex);
             const validHex = /^~?[0-9a-f]{{6}}$/i.test(hex);
@@ -630,7 +638,7 @@ def dashboard_content() -> str:
         async function enrichVisibleAircraft() {{
           const candidates = aircraftData
             .filter(a => a && typeof a === 'object')
-            .filter(a => /^~?[0-9a-f]{6}$/i.test(String(a.hex || '')))
+             .filter(a => /^~?[0-9a-f]{{6}}$/i.test(String(a.hex || '')))
             .filter(a => !a.t && !a.desc && !metadataCache.has(String(a.hex).toLowerCase()) && !metadataRequested.has(String(a.hex).toLowerCase()))
             .slice(0, 20);
           if (!candidates.length) return;
@@ -641,7 +649,7 @@ def dashboard_content() -> str:
               const response = await fetch('/api/aircraft-metadata/' + encodeURIComponent(hex), {{cache:'no-store'}});
               if (!response.ok) continue;
               const payload = await response.json();
-              if (payload && payload.aircraft) metadataCache.set(hex, payload.aircraft);
+              if (payload) metadataCache.set(hex, payload);
             }} catch (error) {{
               // Metadata is supplementary; keep live readsb data working when lookup fails.
             }}
