@@ -28,6 +28,7 @@ DEFAULT_SETTINGS = {
 }
 ASBDB_BASE = "https://api.adsbdb.com/v0/callsign/"
 APP_VERSION = "0.0.5"
+FIRST_RUN_FILE = Path(".planes_setup_complete")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s planes: %(message)s")
 logger = logging.getLogger("planes")
@@ -62,6 +63,127 @@ def load_settings() -> dict[str, Any]:
         cache_seconds = DEFAULT_SETTINGS["asbdb_cache_seconds"]
     settings["asbdb_cache_seconds"] = max(5, min(3600, cache_seconds))
     return settings
+
+def setup_complete() -> bool:
+    return FIRST_RUN_FILE.exists()
+
+
+def mark_setup_complete() -> None:
+    FIRST_RUN_FILE.write_text("Planes setup completed.\\n", encoding="utf-8")
+
+
+def setup_content() -> str:
+    settings = load_settings()
+    feed_url = clean(settings.get("aircraft_data_url", DEFAULT_SETTINGS["aircraft_data_url"]))
+    refresh = settings["refresh_seconds"]
+    asbdb_checked = "checked" if settings.get("asbdb_enabled", True) else ""
+    return f'''<section class="panel setup-hero">
+      <p class="eyebrow">FIRST-RUN SETUP</p>
+      <h2>Welcome to Planes</h2>
+      <p>Set the few options Planes needs before opening the live aircraft dashboard. You can change all of these later in Settings.</p>
+    </section>
+
+    <form id="setup-form" class="panel settings-form">
+      <div>
+        <label for="setup-feed-url">Aircraft data URL</label>
+        <input id="setup-feed-url" type="url" value="{feed_url}" required>
+        <p class="field-help">Default for readsb/tar1090 on the same Pi: <code>http://127.0.0.1:8504/data/aircraft.json</code></p>
+      </div>
+
+      <div>
+        <label for="setup-refresh">Refresh interval</label>
+        <select id="setup-refresh">
+          {''.join(f'<option value="{n}" {"selected" if refresh == n else ""}>{n} seconds</option>' for n in [2,3,5,10,15,30,60])}
+        </select>
+      </div>
+
+      <div>
+        <label for="setup-theme">Base theme</label>
+        <select id="setup-theme">
+          <option value="system">Use system setting</option>
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+        <p class="field-help">You can change this later without changing receiver settings.</p>
+      </div>
+
+      <label class="checkbox">
+        <input id="setup-asbdb" type="checkbox" {asbdb_checked}>
+        Enable optional ASBDB route information
+      </label>
+
+      <div class="form-actions">
+        <button id="setup-test" class="button secondary" type="button">Test feed</button>
+        <button class="button" type="submit">Save and open Planes</button>
+        <span id="setup-status" role="status" aria-live="polite"></span>
+      </div>
+    </form>
+
+    <section class="panel">
+      <h2>What happens next?</h2>
+      <ul class="clean-list">
+        <li>Planes saves the receiver URL and refresh interval.</li>
+        <li>Your theme is saved only in this browser.</li>
+        <li>The Dashboard opens and starts live refreshes.</li>
+        <li>You can change these settings at any time.</li>
+      </ul>
+    </section>
+
+    <script>
+      (() => {{
+        const form = document.getElementById('setup-form');
+        const url = document.getElementById('setup-feed-url');
+        const refresh = document.getElementById('setup-refresh');
+        const theme = document.getElementById('setup-theme');
+        const asbdb = document.getElementById('setup-asbdb');
+        const test = document.getElementById('setup-test');
+        const status = document.getElementById('setup-status');
+
+        theme.value = localStorage.getItem('planes-theme') || 'system';
+        document.documentElement.dataset.theme = theme.value;
+        theme.addEventListener('change', () => {{
+          localStorage.setItem('planes-theme', theme.value);
+          document.documentElement.dataset.theme = theme.value;
+        }});
+
+        test.addEventListener('click', async () => {{
+          status.textContent = 'Testing feed…';
+          try {{
+            const response = await fetch('/api/test-feed-url?url=' + encodeURIComponent(url.value.trim()), {{cache:'no-store'}});
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.detail || 'Feed test failed');
+            status.textContent = 'Feed OK · ' + result.aircraft_count + ' aircraft · ' + result.response_ms + ' ms';
+          }} catch (error) {{
+            status.textContent = error.message || 'Feed test failed';
+          }}
+        }});
+
+        form.addEventListener('submit', async event => {{
+          event.preventDefault();
+          status.textContent = 'Saving…';
+          try {{
+            const response = await fetch('/api/setup', {{
+              method: 'POST',
+              headers: {{'Content-Type': 'application/json'}},
+              body: JSON.stringify({{
+                aircraft_data_url: url.value.trim(),
+                refresh_seconds: Number(refresh.value),
+                asbdb_enabled: asbdb.checked
+              }})
+            }});
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.detail || 'Setup could not be saved');
+            localStorage.setItem('planes-theme', theme.value);
+            document.documentElement.dataset.theme = theme.value;
+            status.textContent = 'Setup complete. Opening Dashboard…';
+            window.location.href = '/';
+          }} catch (error) {{
+            status.textContent = error.message || 'Setup could not be saved';
+          }}
+        }});
+      }})();
+    </script>'''
+
 
 def save_settings(settings: dict[str, Any]) -> None:
     SETTINGS_FILE.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
@@ -113,11 +235,13 @@ def clean(value: Any, fallback: str = "—") -> str:
 def aircraft_rows(aircraft: list[dict[str, Any]]) -> str:
     rows: list[str] = []
     for plane in aircraft:
+        if not isinstance(plane, dict):
+            continue
         hex_code = str(plane.get("hex", "")).strip().lower()
         valid_hex = bool(re.fullmatch(r"[0-9a-f]{6}", hex_code))
-        flight = str(plane.get("flight", "")).strip() or "Unknown"
-        aircraft_type = str(plane.get("t", "")).strip() or str(plane.get("desc", "")).strip() or "Unknown"
-        registration = str(plane.get("r", "")).strip()
+        flight = str(plane.get("flight") or plane.get("callsign") or plane.get("fn") or "").strip() or (f"ICAO {hex_code.upper()}" if valid_hex else "Unknown")
+        aircraft_type = str(plane.get("t") or plane.get("type") or plane.get("desc") or "").strip() or "Type unavailable"
+        registration = str(plane.get("r") or plane.get("registration") or "").strip()
         speed = plane.get("gs", "—")
         altitude = plane.get("alt_baro", "—")
         fav_key = clean(hex_code) if valid_hex else ""
@@ -329,10 +453,11 @@ def dashboard_content() -> str:
           }});
 
           tbody.innerHTML = list.length ? list.map(a => {{
-            const flight = (a.flight || 'Unknown').trim();
-            const type = a.t || a.desc || 'Unknown';
-            const hex = String(a.hex || '').toLowerCase();
-            const registration = String(a.r || '').trim();
+            const safeAircraft = (a && typeof a === 'object') ? a : {};
+            const flight = String(safeAircraft.flight || safeAircraft.callsign || safeAircraft.fn || (safeAircraft.hex ? 'ICAO ' + String(safeAircraft.hex).toUpperCase() : 'Unknown')).trim();
+            const type = safeAircraft.t || safeAircraft.type || safeAircraft.desc || 'Type unavailable';
+            const hex = String(safeAircraft.hex || '').toLowerCase();
+            const registration = String(safeAircraft.r || safeAircraft.registration || '').trim();
             const favOn = favs.has(hex);
             const validHex = /^[0-9a-f]{{6}}$/i.test(hex);
             const details = validHex ? '/aircraft/' + encodeURIComponent(hex) : '#';
@@ -410,6 +535,8 @@ def dashboard_content() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
+    if not setup_complete():
+        return page("Welcome to Planes", setup_content())
     return page("Aircraft Dashboard", dashboard_content(), "dashboard")
 
 
@@ -625,6 +752,13 @@ def read_settings():
     </script>'''
     return page("Settings", content, "settings")
 
+@app.get("/setup", response_class=HTMLResponse)
+def read_setup():
+    if setup_complete():
+        return page("Settings", read_settings().body.decode() if isinstance(read_settings(), HTMLResponse) else setup_content(), "settings")
+    return page("Welcome to Planes", setup_content())
+
+
 @app.get("/api/settings")
 def get_settings():
     return load_settings()
@@ -658,6 +792,29 @@ def test_feed_url(url: str):
     except requests.RequestException as exc:
         logger.warning("Feed test failed for %s: %s", url, exc)
         return JSONResponse({"detail": f"Feed request failed: {exc}"}, status_code=502)
+
+
+@app.post("/api/setup")
+def finish_setup(payload: dict[str, Any]):
+    try:
+        url = validate_data_url(str(payload.get("aircraft_data_url", "")))
+        refresh = int(payload.get("refresh_seconds", 5))
+        if refresh not in {2,3,5,10,15,30,60}:
+            raise ValueError("Choose a refresh interval from the list.")
+        settings = load_settings()
+        settings.update({
+            "aircraft_data_url": url,
+            "refresh_seconds": refresh,
+            "asbdb_enabled": bool(payload.get("asbdb_enabled", True)),
+        })
+        save_settings(settings)
+        mark_setup_complete()
+        return {"ok": True, "settings": settings}
+    except (ValueError, TypeError) as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+    except OSError as exc:
+        logger.error("Unable to mark first-run setup complete: %s", exc)
+        return JSONResponse({"detail": "Setup could not be saved on this installation."}, status_code=500)
 
 
 @app.post("/api/settings")
