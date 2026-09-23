@@ -104,8 +104,9 @@ def test_metadata_404_is_cached(monkeypatch):
     request = Mock(return_value=response)
     monkeypatch.setattr(webpage.requests, "get", request)
     assert webpage.aircraft_metadata_lookup("4cad7d") is None
+    assert request.call_count == 2
     assert webpage.aircraft_metadata_lookup("4cad7d") is None
-    assert request.call_count == 1
+    assert request.call_count == 2
 
 
 def test_metadata_falls_back_to_hexdb(monkeypatch):
