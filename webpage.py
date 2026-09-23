@@ -27,6 +27,8 @@ DEFAULT_SETTINGS = {
     "asbdb_cache_seconds": 30,
 }
 ASBDB_BASE = "https://api.adsbdb.com/v0/callsign/"
+AIRCRAFT_LOOKUP_BASE = "https://api.adsbdb.com/v0/aircraft/"
+HEXDB_AIRCRAFT_BASE = "https://hexdb.io/api/v1/aircraft/"
 APP_VERSION = "0.0.5-test"
 FIRST_RUN_FILE = Path(".planes_setup_complete")
 
@@ -281,6 +283,30 @@ def get_readsb_stats() -> dict[str, Any] | None:
 _aircraft_metadata_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
 
+def _hexdb_aircraft_lookup(hex_code: str) -> dict[str, Any] | None:
+    url = HEXDB_AIRCRAFT_BASE + quote(hex_code, safe="")
+    try:
+        response = requests.get(url, timeout=2)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict) or not payload.get("Registration"):
+            return None
+        return {
+            "type": str(payload.get("Type") or "").strip(),
+            "icao_type": str(payload.get("ICAOTypeCode") or "").strip(),
+            "manufacturer": str(payload.get("Manufacturer") or "").strip(),
+            "mode_s": str(payload.get("ModeS") or hex_code).strip().lower(),
+            "registration": str(payload.get("Registration") or "").strip(),
+            "registered_owner": str(payload.get("RegisteredOwners") or "").strip(),
+            "registered_owner_operator_flag_code": str(payload.get("OperatorFlagCode") or "").strip(),
+        }
+    except (requests.RequestException, ValueError, TypeError, AttributeError) as exc:
+        logger.info("HexDB aircraft lookup failed for %s: %s", hex_code, exc)
+        return None
+
+
 def aircraft_metadata_lookup(hex_code: str, callsign: str = "") -> dict[str, Any] | None:
     hex_code = str(hex_code or "").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{6}", hex_code):
@@ -291,29 +317,39 @@ def aircraft_metadata_lookup(hex_code: str, callsign: str = "") -> dict[str, Any
     cached = _aircraft_metadata_cache.get(cache_key)
     if cached and now - cached[0] < 86400:
         return cached[1]
+
     url = AIRCRAFT_LOOKUP_BASE + quote(hex_code, safe="")
     if clean_callsign:
         url += "?callsign=" + quote(clean_callsign, safe="")
+
+    result: dict[str, Any] = {}
     try:
         response = requests.get(url, timeout=3)
-        if response.status_code == 404:
-            _aircraft_metadata_cache[cache_key] = (now, None)
-            return None
-        response.raise_for_status()
-        payload = response.json()
-        root = payload.get("response", {}) if isinstance(payload, dict) else {}
-        aircraft = root.get("aircraft") if isinstance(root, dict) else None
-        route = root.get("flightroute") if isinstance(root, dict) else None
-        result: dict[str, Any] = {}
-        if isinstance(aircraft, dict):
-            result["aircraft"] = aircraft
-        if isinstance(route, dict):
-            result["flightroute"] = route
-        _aircraft_metadata_cache[cache_key] = (now, result or None)
-        return result or None
+        if response.status_code != 404:
+            response.raise_for_status()
+            payload = response.json()
+            root = payload.get("response", {}) if isinstance(payload, dict) else {}
+            aircraft = root.get("aircraft") if isinstance(root, dict) else None
+            route = root.get("flightroute") if isinstance(root, dict) else None
+            if isinstance(aircraft, dict):
+                result["aircraft"] = aircraft
+            if isinstance(route, dict):
+                result["flightroute"] = route
     except (requests.RequestException, ValueError, TypeError, AttributeError) as exc:
-        logger.info("Aircraft metadata lookup failed for %s: %s", hex_code, exc)
-        return None
+        logger.info("ADSBDB aircraft lookup failed for %s: %s", hex_code, exc)
+
+    if "aircraft" not in result:
+        fallback = _hexdb_aircraft_lookup(hex_code)
+        if fallback:
+            result["aircraft"] = fallback
+            result["metadata_source"] = "HexDB"
+        elif result:
+            result["metadata_source"] = "ADSBDB"
+    elif result:
+        result["metadata_source"] = "ADSBDB"
+
+    _aircraft_metadata_cache[cache_key] = (now, result or None)
+    return result or None
 
 
 def metadata_for_aircraft(hex_code: str, callsign: str = "") -> dict[str, Any]:
@@ -630,7 +666,8 @@ def dashboard_content() -> str:
             const route = metadata.flightroute || {{}};
             const routeCallsign = String(route.callsign_icao || route.callsign_iata || '').trim();
             const flight = String(safeAircraft.flight || safeAircraft.callsign || safeAircraft.fn || routeCallsign || (safeAircraft.hex ? 'ICAO ' + String(safeAircraft.hex).toUpperCase() : 'Unknown')).trim();
-            const type = safeAircraft.t || safeAircraft.desc || identity.type || identity.icao_type || 'Looking up…';
+            const hasMetadata = metadataCache.has(String(safeAircraft.hex || '').toLowerCase());
+            const type = safeAircraft.t || safeAircraft.desc || identity.type || identity.icao_type || (hasMetadata ? 'Unknown' : 'Looking up…');
             const hex = String(safeAircraft.hex || '').toLowerCase();
             const registration = String(safeAircraft.r || safeAircraft.registration || identity.registration || '').trim();
             const manufacturer = String(identity.manufacturer || '').trim();
