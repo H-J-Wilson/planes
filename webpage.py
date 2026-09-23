@@ -962,6 +962,11 @@ static/            CSS, icons and browser assets
 tests/             automated tests
 README.md          setup and testing guide</code></pre>
 
+      <h2>16. First-run setup</h2>
+      <p>A new installation opens a setup screen before the Dashboard. The setup screen asks for the aircraft JSON URL, refresh interval, base theme and optional ASBDB lookups.</p>
+      <p><strong>Test feed</strong> checks the URL before saving it. <strong>Save and open Planes</strong> stores the server settings, records that setup is complete and opens the Dashboard.</p>
+      <p>The completion marker is <code>.planes_setup_complete</code>. It is local to the installation and ignored by Git. Existing settings are prefilled, so an existing installation can normally keep its current receiver URL.</p>
+
       <h2>17. Raspberry Pi testing</h2>
       <p>The repository includes <code>scripts/pi_smoke_test.sh</code>. It is a safe, non-destructive smoke test for a running Raspberry Pi installation.</p>
       <pre><code>cd ~/planes
