@@ -427,11 +427,11 @@ def dashboard_content() -> str:
           const favs = new Set(favouriteState());
 
           const list = [...aircraftData].filter(a => {{
-            const safeAircraft = (a && typeof a === 'object') ? a : {{}};
-            const text = [safeAircraft.flight || safeAircraft.callsign || safeAircraft.fn || '', safeAircraft.t || safeAircraft.type || '', safeAircraft.desc || '', safeAircraft.hex || '', safeAircraft.r || safeAircraft.registration || ''].join(' ').toLowerCase();
-            const vr = Number(safeAircraft.baro_rate ?? safeAircraft.geom_rate);
-            const gs = Number(safeAircraft.gs);
-            const alt = Number(safeAircraft.alt_baro);
+            if (!a || typeof a !== 'object') return false;
+            const text = [a.flight || a.callsign || a.fn || '', a.t || a.type || '', a.desc || '', a.hex || '', a.r || a.registration || ''].join(' ').toLowerCase();
+            const vr = Number(a.baro_rate ?? a.geom_rate);
+            const gs = Number(a.gs);
+            const alt = Number(a.alt_baro);
             const hasPosition = Number.isFinite(Number(a.lat)) && Number.isFinite(Number(a.lon));
             const matchesFilter =
               filter.value === 'all' ||
@@ -962,7 +962,7 @@ static/            CSS, icons and browser assets
 tests/             automated tests
 README.md          setup and testing guide</code></pre>
 
-      <h2>16. Raspberry Pi testing</h2>
+      <h2>17. Raspberry Pi testing</h2>
       <p>The repository includes <code>scripts/pi_smoke_test.sh</code>. It is a safe, non-destructive smoke test for a running Raspberry Pi installation.</p>
       <pre><code>cd ~/planes
 bash scripts/pi_smoke_test.sh</code></pre>
@@ -972,7 +972,11 @@ bash scripts/pi_smoke_test.sh</code></pre>
 # wait for a Dashboard refresh
 sudo systemctl start readsb</code></pre>
 
-      <h2>17. Release state</h2>
+      <h2>16. First-run setup</h2>
+      <p>On a new installation, Planes shows a setup screen before the Dashboard. It asks for the aircraft JSON URL, refresh interval, base theme and optional ASBDB lookups.</p>
+      <p><strong>Test feed</strong> checks the URL before it is saved. <strong>Save and open Planes</strong> stores the server settings, records that setup is complete and opens the Dashboard.</p>
+      <p>The completion marker is stored locally as <code>.planes_setup_complete</code> and is ignored by Git. Existing settings are prefilled so an existing installation can normally accept its current configuration and continue.</p>
+      <h2>17. Raspberry Pi testing</h2>
       <p><strong>v0.0.5 audit fixes</strong>. This branch contains fixes found during manual post-release testing. It should not be treated as the next release until the Pi test checklist passes.</p>
     </section>'''
     return page("Documentation", content, "documentation")
