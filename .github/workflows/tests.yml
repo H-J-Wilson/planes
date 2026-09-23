@@ -6,6 +6,7 @@ on:
       - main
       - "v*"
       - "v0.0.5-audit-fixes"
+      - "v0.0.5-test"
   pull_request:
     branches:
       - main
@@ -29,5 +30,7 @@ jobs:
         run: python -m py_compile main.py webpage.py
       - name: Check Pi smoke test syntax
         run: bash -n scripts/pi_smoke_test.sh
-      - name: Run tests
+      - name: Run unittest suite
         run: python -m unittest discover -s tests -v
+      - name: Run pytest suite
+        run: pytest -q
