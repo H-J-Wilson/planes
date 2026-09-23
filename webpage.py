@@ -927,7 +927,7 @@ def read_aircraft_details(hex_code: str):
 def get_aircraft_details_fragment(hex_code: str, response: Response):
     response.headers["Cache-Control"] = "no-store"
     safe_hex = str(hex_code or "").strip().lower()
-    if not re.fullmatch(r"[0-9a-f]{6}", safe_hex):
+    if not valid_aircraft_identifier(safe_hex):
         return HTMLResponse(
             '<div class="notice error"><strong>Invalid aircraft identifier.</strong><p>Aircraft identifiers must be six hexadecimal characters, optionally prefixed with ~ for non-ICAO targets.</p></div>',
             status_code=400,
@@ -1119,12 +1119,12 @@ return data + request time</code></pre>
 
       <h2>6. Dashboard server rendering</h2>
       <p><code>dashboard_content()</code> performs one initial feed read, creates the first table and embeds the aircraft list into browser JavaScript.</p>
-      <p><code>aircraft_rows()</code> escapes displayed values, validates HEX identifiers and adds registration beneath the callsign when available. Invalid HEX values do not receive detail links or favourite controls.</p>
+      <p><code>aircraft_rows()</code> escapes displayed values, validates readsb identifiers (including <code>~</code>-prefixed non-ICAO identifiers), and adds registration beneath the callsign when available. The feed's <code>type</code> field is treated as a message-source field, not an aircraft model.</p>
 
       <h2>7. Dashboard JavaScript</h2>
       <p>The browser keeps an <code>aircraftData</code> array and redraws the table when a control changes.</p>
       <ul class="clean-list">
-        <li><strong>Search:</strong> callsign/flight, type, description, HEX and registration.</li>
+        <li><strong>Search:</strong> callsign/flight, aircraft type/description, HEX, registration, manufacturer and other receiver fields.</li>
         <li><strong>Sort:</strong> flight, type, speed, altitude and distance.</li>
         <li><strong>Filters:</strong> moving, climbing, descending, valid position, favourites, minimum altitude and minimum speed.</li>
         <li><strong>Favourites:</strong> stored in browser <code>localStorage</code>.</li>
@@ -1142,15 +1142,14 @@ return data + request time</code></pre>
 
       <h2>9. Aircraft details</h2>
       <p>The detail page validates the HEX identifier before starting its polling loop. The browser polls <code>/api/aircraft/&lt;hex&gt;</code> and now checks HTTP errors instead of displaying an error response as if it were valid detail data.</p>
-      <p>The detail view can show registration, type/description, squawk, altitude, ground speed, vertical rate, heading, position, distance and bearing when supplied.</p>
+      <p>The detail view first uses the live receiver object, then enriches it from ADSBDB by Mode-S HEX when the target has a normal ICAO address. It can show registration, aircraft type, ICAO type, manufacturer, operator/owner, flight number, ICAO/IATA callsign, squawk, altitude, speed, vertical rate, heading, position, distance, bearing and signal.</p>
 
       <h2>10. ASBDB</h2>
-      <p><code>asbdb_lookup()</code> URL-encodes callsigns and caches successful results and 404 misses. This prevents repeated requests every few seconds when a callsign has no route record.</p>
+      <p><code>aircraft_metadata_lookup()</code> looks up a normal six-digit Mode-S HEX in ADSBDB and caches the result for 24 hours. When a receiver callsign is available, it also requests the combined aircraft/callsign response so the detail card can show the returned ICAO/IATA callsign and route.</p><p><code>asbdb_lookup()</code> remains the route fallback for callsigns and caches successful results and 404 misses.</p>
       <p>ASBDB is supplementary scheduled-route data. It is not the live aircraft position source.</p>
 
       <h2>11. Statistics</h2>
-      <p>The Statistics page works from the current feed and now shows aircraft count, aircraft with positions, moving/climbing/descending counts, average altitude, average speed, highest altitude, fastest speed and feed state.</p>
-      <p>There is no historical database in this release.</p>
+      <p>The Statistics page is split into three periods: the current live snapshot, the current Planes session, and the overall period reported by readsb's <code>stats.json</code>. Planes session metrics include unique aircraft seen, peak and average aircraft counts, highest altitude, fastest speed, recorded snapshots and feed interruptions. readsb-period metrics include running time, accepted messages, tracks, CPR positions, SDR blocks and signal information when supplied.</p>
 
       <h2>12. Settings feed test</h2>
       <p><code>/api/test-feed</code> tests the saved configuration. <code>/api/test-feed-url</code> tests the URL currently typed into the Settings box, so a new URL can be checked before saving it.</p>
@@ -1170,6 +1169,7 @@ return data + request time</code></pre>
         <li><code>/api/settings</code> — settings read/write.</li>
         <li><code>/api/test-feed</code> — saved-feed test.</li>
         <li><code>/api/test-feed-url</code> — unsaved-feed test.</li>
+        <li><code>/statistics</code> also reads <code>stats.json</code> from the configured readsb host when available.</li>
       </ul>
 
       <h2>14. Static files</h2>
@@ -1204,7 +1204,7 @@ sudo systemctl start readsb</code></pre>
       <p><strong>Test feed</strong> checks the URL before it is saved. <strong>Save and open Planes</strong> stores the server settings, records that setup is complete and opens the Dashboard.</p>
       <p>The completion marker is stored locally as <code>.planes_setup_complete</code> and is ignored by Git. Existing settings are prefilled so an existing installation can normally accept its current configuration and continue.</p>
       <h2>17. Raspberry Pi testing</h2>
-      <p><strong>v0.0.5 audit fixes</strong>. This branch contains fixes found during manual post-release testing. It should not be treated as the next release until the Pi test checklist passes.</p>
+      <p><strong>v0.0.5 audit fixes</strong>. This branch contains fixes found during manual post-release testing, including metadata enrichment, non-ICAO identifier support, dashboard search/favourite fixes and the reworked statistics periods. It should not be treated as the next release until the Pi test checklist passes.</p>
     </section>'''
     return page("Documentation", content, "documentation")
 
