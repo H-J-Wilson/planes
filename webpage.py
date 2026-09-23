@@ -767,23 +767,32 @@ def asbdb_lookup(callsign: str) -> dict[str, Any] | None:
 
 def detail_fragment(hex_code: str) -> str:
     hex_code = str(hex_code or "").strip().lower()
-    if not re.fullmatch(r"[0-9a-f]{6}", hex_code):
-        return '<div class="notice error"><strong>Invalid aircraft identifier.</strong><p>Aircraft identifiers must be six hexadecimal characters.</p></div>'
+    if not valid_aircraft_identifier(hex_code):
+        return '<div class="notice error"><strong>Invalid aircraft identifier.</strong><p>Aircraft identifiers must be six hexadecimal characters, optionally prefixed with ~ for non-ICAO targets.</p></div>'
 
     data, _ = get_aircraft_data()
     target = next((a for a in data.get("aircraft", []) if str(a.get("hex", "")).strip().lower() == hex_code), None)
     if not target:
         return '<div class="notice error"><strong>Aircraft not currently visible.</strong><p>It may have left receiver range or stopped transmitting.</p></div>'
 
-    flight = str(target.get("flight", "Unknown")).strip() or "Unknown"
-    route = asbdb_lookup(flight)
+    flight = str(target.get("flight") or target.get("callsign") or target.get("fn") or "").strip()
+    metadata = aircraft_metadata_lookup(hex_code, flight) or {}
+    db_aircraft = metadata.get("aircraft") if isinstance(metadata.get("aircraft"), dict) else {}
+    route = metadata.get("flightroute") if isinstance(metadata.get("flightroute"), dict) else None
+    if not route and flight:
+        route = asbdb_lookup(flight)
+
     route_html = '<p class="muted">No scheduled route information available.</p>'
+    route_callsign = ""
+    route_iata = ""
     if route:
+        route_callsign = str(route.get("callsign_icao") or route.get("callsign") or "").strip()
+        route_iata = str(route.get("callsign_iata") or "").strip()
         origin_obj = route.get("origin") if isinstance(route.get("origin"), dict) else {}
         destination_obj = route.get("destination") if isinstance(route.get("destination"), dict) else {}
         airline_obj = route.get("airline") if isinstance(route.get("airline"), dict) else {}
-        origin_code = origin_obj.get("iata") or origin_obj.get("icao")
-        destination_code = destination_obj.get("iata") or destination_obj.get("icao")
+        origin_code = origin_obj.get("iata_code") or origin_obj.get("iata") or origin_obj.get("icao_code") or origin_obj.get("icao")
+        destination_code = destination_obj.get("iata_code") or destination_obj.get("iata") or destination_obj.get("icao_code") or destination_obj.get("icao")
         origin_name = origin_obj.get("name") or "Unknown origin"
         destination_name = destination_obj.get("name") or "Unknown destination"
         airline_name = airline_obj.get("name") or "Unknown airline"
@@ -791,10 +800,26 @@ def detail_fragment(hex_code: str) -> str:
         destination_label = f"{clean(destination_code)} · {clean(destination_name)}" if destination_code else clean(destination_name)
         route_html = f'<div class="route"><div><span>Origin</span><strong>{origin_label}</strong></div><div class="route-arrow" aria-hidden="true">→</div><div><span>Destination</span><strong>{destination_label}</strong></div><p>{clean(airline_name)} · ASBDB scheduled-route data</p></div>'
 
+    display_flight = flight or route_callsign or (f"ICAO {hex_code.replace('~','').upper()}" if hex_code else "Unknown")
+    registration = target.get("r") or target.get("registration") or db_aircraft.get("registration")
+    aircraft_type = target.get("t") or target.get("desc") or db_aircraft.get("type") or "Type unavailable"
+    icao_type = db_aircraft.get("icao_type")
+    manufacturer = db_aircraft.get("manufacturer")
+    operator = db_aircraft.get("registered_owner_operator_flag_code") or db_aircraft.get("registered_owner")
+    owner_country = db_aircraft.get("registered_owner_country_name")
     vertical_rate = target.get("baro_rate")
+
     fields = [
-        ("Registration", target.get("r")),
-        ("Aircraft type", target.get("desc") or target.get("t")),
+        ("Flight number", flight or None),
+        ("ICAO callsign", route_callsign or None),
+        ("IATA callsign", route_iata or None),
+        ("Registration", registration),
+        ("Aircraft type", aircraft_type),
+        ("ICAO type", icao_type),
+        ("Manufacturer", manufacturer),
+        ("Operator / owner", operator),
+        ("Owner country", owner_country),
+        ("HEX / Mode-S", hex_code.upper()),
         ("Squawk", target.get("squawk")),
         ("Ground speed", f"{target.get('gs')} kt" if target.get("gs") is not None else None),
         ("Altitude", f"{target.get('alt_baro')} ft" if target.get("alt_baro") is not None else None),
@@ -804,15 +829,20 @@ def detail_fragment(hex_code: str) -> str:
         ("Longitude", target.get("lon")),
         ("Distance", f"{target.get('r_dst')} nm" if target.get("r_dst") is not None else None),
         ("Bearing", f"{target.get('r_dir')}°" if target.get("r_dir") is not None else None),
+        ("Signal", f"{target.get('rssi')} dBFS" if target.get("rssi") is not None else None),
     ]
-    cards = "".join(f'<div><span>{clean(label)}</span><strong>{clean(value)}</strong></div>' for label,value in fields)
-    return f'''<div class="detail-title"><div><p class="eyebrow">HEX {clean(hex_code.upper())}</p><h2>{clean(flight)}</h2></div><span class="live-pill">LIVE</span></div>
-    <div class="detail-grid">{cards}</div><section class="route-panel"><h3>Route information</h3>{route_html}</section>'''
+    cards = "".join(
+        f'<div><span>{clean(label)}</span><strong>{clean(value)}</strong></div>'
+        for label, value in fields
+    )
+    return f'''<div class="detail-title"><div><p class="eyebrow">HEX {clean(hex_code.replace('~','').upper())}</p><h2>{clean(display_flight)}</h2></div><span class="live-pill">LIVE</span></div>
+    <section class="detail-section"><h3>Identity and aircraft</h3><div class="detail-grid">{cards}</div></section>
+    <section class="route-panel"><h3>Route information</h3>{route_html}</section>'''
 
 @app.get("/aircraft/{hex_code}", response_class=HTMLResponse)
 def read_aircraft_details(hex_code: str):
     safe_hex = str(hex_code or "").strip().lower()
-    if not re.fullmatch(r"[0-9a-f]{6}", safe_hex):
+    if not valid_aircraft_identifier(safe_hex):
         return page("Aircraft Details", '<section class="panel"><div class="notice error"><strong>Invalid aircraft identifier.</strong></div><a class="back-link" href="/">← Back to dashboard</a></section>')
     content = f'''<section class="panel detail-panel"><div id="live-details" role="region" aria-live="polite" aria-label="Live aircraft details"><p class="loading">Loading live aircraft data…</p></div><a class="back-link" href="/">← Back to dashboard</a></section>
     <script>
@@ -842,7 +872,7 @@ def get_aircraft_details_fragment(hex_code: str, response: Response):
     safe_hex = str(hex_code or "").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{6}", safe_hex):
         return HTMLResponse(
-            '<div class="notice error"><strong>Invalid aircraft identifier.</strong><p>Aircraft identifiers must be six hexadecimal characters.</p></div>',
+            '<div class="notice error"><strong>Invalid aircraft identifier.</strong><p>Aircraft identifiers must be six hexadecimal characters, optionally prefixed with ~ for non-ICAO targets.</p></div>',
             status_code=400,
         )
     return HTMLResponse(detail_fragment(safe_hex))
