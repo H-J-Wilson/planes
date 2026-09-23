@@ -1109,8 +1109,10 @@ def detail_fragment(hex_code: str) -> str:
         photo_html = f'<img class="aircraft-photo" src="{html.escape(photo_url, quote=True)}" alt="Aircraft photo from ADSBDB" loading="lazy">'
 
     source_note = "Live telemetry: readsb"
-    if metadata.get("ok"):
-        source_note += " · identity: ADSBDB"
+    if live_identity:
+        source_note += " · live identity: FR24"
+    if metadata.get("metadata_source"):
+        source_note += " · aircraft data: " + str(metadata["metadata_source"])
 
     return f'''<div class="detail-title"><div><p class="eyebrow">AIRCRAFT DETAILS</p><h2>{clean(display_flight)}</h2><p class="detail-subtitle">HEX {clean(hex_code.replace("~","").upper())} · {clean(registration, "Registration unavailable")}</p></div><span class="live-pill">LIVE</span></div>
     {photo_html}
@@ -1161,8 +1163,8 @@ def get_aircraft_metadata(hex_code: str):
         "ok": result["ok"],
         "aircraft": result["aircraft"],
         "flightroute": result["flightroute"],
-        "live_identity": result["live_identity"],
-        "metadata_source": result["metadata_source"],
+        "live_identity": result.get("live_identity", {}),
+        "metadata_source": result.get("metadata_source", ""),
     }
     return JSONResponse(response, headers={"Cache-Control": "public, max-age=300"})
 
