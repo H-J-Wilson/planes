@@ -704,7 +704,13 @@ def read_aircraft_details(hex_code: str):
 @app.get("/api/aircraft/{hex_code}", response_class=HTMLResponse)
 def get_aircraft_details_fragment(hex_code: str, response: Response):
     response.headers["Cache-Control"] = "no-store"
-    return HTMLResponse(detail_fragment(hex_code))
+    safe_hex = str(hex_code or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{6}", safe_hex):
+        return HTMLResponse(
+            '<div class="notice error"><strong>Invalid aircraft identifier.</strong><p>Aircraft identifiers must be six hexadecimal characters.</p></div>',
+            status_code=400,
+        )
+    return HTMLResponse(detail_fragment(safe_hex))
 
 
 @app.get("/settings", response_class=HTMLResponse)
