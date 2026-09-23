@@ -427,10 +427,11 @@ def dashboard_content() -> str:
           const favs = new Set(favouriteState());
 
           const list = [...aircraftData].filter(a => {{
-            const text = [a.flight || '', a.t || '', a.desc || '', a.hex || '', a.r || ''].join(' ').toLowerCase();
-            const vr = Number(a.baro_rate ?? a.geom_rate);
-            const gs = Number(a.gs);
-            const alt = Number(a.alt_baro);
+            const safeAircraft = (a && typeof a === 'object') ? a : {{}};
+            const text = [safeAircraft.flight || safeAircraft.callsign || safeAircraft.fn || '', safeAircraft.t || safeAircraft.type || '', safeAircraft.desc || '', safeAircraft.hex || '', safeAircraft.r || safeAircraft.registration || ''].join(' ').toLowerCase();
+            const vr = Number(safeAircraft.baro_rate ?? safeAircraft.geom_rate);
+            const gs = Number(safeAircraft.gs);
+            const alt = Number(safeAircraft.alt_baro);
             const hasPosition = Number.isFinite(Number(a.lat)) && Number.isFinite(Number(a.lon));
             const matchesFilter =
               filter.value === 'all' ||
@@ -438,7 +439,7 @@ def dashboard_content() -> str:
               (filter.value === 'climbing' && Number.isFinite(vr) && vr > 100) ||
               (filter.value === 'descending' && Number.isFinite(vr) && vr < -100) ||
               (filter.value === 'position' && hasPosition) ||
-              (filter.value === 'favourite' && favs.has(String(a.hex || '').toLowerCase()));
+              (filter.value === 'favourite' && favs.has(String(safeAircraft.hex || '').toLowerCase()));
             const altitudeMatches = !hasMinAlt || (Number.isFinite(alt) && alt >= minAlt);
             const speedMatches = !hasMinSpd || (Number.isFinite(gs) && gs >= minSpd);
             return text.includes(q) && altitudeMatches && speedMatches && matchesFilter;
@@ -447,9 +448,9 @@ def dashboard_content() -> str:
           list.sort((a,b) => {{
             if (key === 'speed') return Number(b.gs ?? -1) - Number(a.gs ?? -1);
             if (key === 'altitude') return Number(b.alt_baro ?? -1) - Number(a.alt_baro ?? -1);
-            if (key === 'type') return String(a.t || a.desc || '').localeCompare(String(b.t || b.desc || ''));
+            if (key === 'type') return String(a.t || a.type || a.desc || '').localeCompare(String(b.t || b.type || b.desc || ''));
             if (key === 'distance') return Number(b.r_dst ?? -1) - Number(a.r_dst ?? -1);
-            return String(a.flight || '').localeCompare(String(b.flight || ''));
+            return String(a.flight || a.callsign || a.fn || '').localeCompare(String(b.flight || b.callsign || b.fn || ''));
           }});
 
           tbody.innerHTML = list.length ? list.map(a => {{
@@ -755,7 +756,7 @@ def read_settings():
 @app.get("/setup", response_class=HTMLResponse)
 def read_setup():
     if setup_complete():
-        return page("Settings", read_settings().body.decode() if isinstance(read_settings(), HTMLResponse) else setup_content(), "settings")
+        return page("Setup complete", '<section class="panel"><h2>Setup already completed</h2><p>Use Settings to change the receiver URL, refresh interval, ASBDB or theme.</p><a class="button" href="/settings">Open Settings</a></section>')
     return page("Welcome to Planes", setup_content())
 
 
