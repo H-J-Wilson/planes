@@ -98,7 +98,7 @@ Do not run `git pull` when `git status` shows work you need to keep.
 The current reliability fixes are on:
 
 ```text
-v0.0.5-audit-fixes
+v0.0.5-test
 ```
 
 On the Pi:
@@ -106,7 +106,7 @@ On the Pi:
 ```bash
 cd ~/planes
 git fetch origin
-git checkout v0.0.5-audit-fixes
+git checkout v0.0.5-test
 git pull
 source venv/bin/activate
 pip install -r requirements.txt
@@ -388,9 +388,9 @@ GitHub Actions also compiles and tests the project on Python 3.10–3.13 and che
 
 Latest released version: **v0.0.5**
 
-The branch `v0.0.5-audit-fixes` contains reliability and polish fixes found during post-release testing.
+The branch `v0.0.5-test` contains reliability, metadata, dashboard and statistics fixes found during post-release testing.
 
-Do not treat the audit branch as a release until the Pi checklist passes.
+Do not treat the test branch as a release until the Pi checklist and automated tests pass.
 
 ## Raspberry Pi dependency note
 
