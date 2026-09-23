@@ -124,6 +124,8 @@ if ROOT_CODE="$(curl -sS -o "$ROOT_TMP" -w '%{http_code}' --max-time 5 "$PLANES_
       warn "first-run setup has not been completed yet"
     else
       ROW_COUNT="$(grep -o 'data-aircraft-row' "$ROOT_TMP" | wc -l | tr -d ' ')"
+      # The browser render template also contains the marker once, so subtract that copy.
+      if [ "$ROW_COUNT" -gt 0 ]; then ROW_COUNT=$((ROW_COUNT - 1)); fi
       if [ "$AIRCRAFT_COUNT" -gt 0 ] && [ "$ROW_COUNT" -eq 0 ]; then
         fail "Dashboard HTML contains no aircraft rows even though the feed contains $AIRCRAFT_COUNT aircraft"
       elif [ "$ROW_COUNT" -gt 0 ]; then
@@ -152,6 +154,19 @@ if [ "$PLANES_RUNNING" = true ]; then
       fail "$path could not be reached"
     fi
   done
+
+  STATS_HTML_TMP="$(mktemp)"
+  if curl -fsS --max-time 5 "$PLANES_URL/statistics" >"$STATS_HTML_TMP"; then
+    if grep -q "Since Planes started" "$STATS_HTML_TMP" && grep -q "Since readsb started" "$STATS_HTML_TMP"; then
+      pass "Statistics page contains live and running-period sections"
+    else
+      fail "Statistics page is missing the new period sections"
+    fi
+  else
+    fail "Statistics page could not be read"
+  fi
+  rm -f "$STATS_HTML_TMP"
+
 
   DASH_TMP="$(mktemp)"
   if DASH_CODE="$(curl -sS -o "$DASH_TMP" -w '%{http_code}' --max-time 5 "$PLANES_URL/api/dashboard-data" 2>/dev/null)"; then
@@ -191,6 +206,30 @@ PY
     fail "/api/dashboard-data could not be reached"
   fi
   rm -f "$DASH_TMP"
+
+  DETAIL_HEX="$("$PYTHON" - "$FEED_TMP" <<'PY'
+import json
+import re
+import sys
+with open(sys.argv[1], encoding="utf-8") as f:
+    data = json.load(f)
+for aircraft in data.get("aircraft", []):
+    value = str(aircraft.get("hex", "")).strip().lower()
+    if re.fullmatch(r"~?[0-9a-f]{6}", value):
+        print(value)
+        break
+PY
+)"
+  if [ -n "$DETAIL_HEX" ]; then
+    DETAIL_CODE="$(http_code "$PLANES_URL/api/aircraft/$DETAIL_HEX")"
+    if [ "$DETAIL_CODE" = "200" ]; then
+      pass "valid aircraft detail endpoint returns HTTP 200 ($DETAIL_HEX)"
+    else
+      fail "valid aircraft detail endpoint returned HTTP $DETAIL_CODE ($DETAIL_HEX)"
+    fi
+  else
+    warn "no valid aircraft HEX available for detail endpoint test"
+  fi
 
   TEST_TMP="$(mktemp)"
   if TEST_CODE="$(curl -sS -o "$TEST_TMP" -w '%{http_code}' --max-time 5 "$PLANES_URL/api/test-feed" 2>/dev/null)"; then
@@ -259,6 +298,19 @@ PY
     fail "invalid feed URL test could not reach Planes"
   fi
   rm -f "$BAD_TMP"
+
+  STATS_URL="$("$PYTHON" - "$FEED_URL" <<'PY'
+from urllib.parse import urljoin
+import sys
+print(urljoin(sys.argv[1], "stats.json"))
+PY
+)"
+  STATS_CODE="$(http_code "$STATS_URL")"
+  if [ "$STATS_CODE" = "200" ]; then
+    pass "readsb stats.json is available"
+  else
+    warn "readsb stats.json returned HTTP $STATS_CODE"
+  fi
 
   BAD_AIRCRAFT_CODE="$(http_code "$PLANES_URL/api/aircraft/not-a-hex-id")"
   if [ "$BAD_AIRCRAFT_CODE" = "400" ]; then
