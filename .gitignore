@@ -12,3 +12,4 @@ env/
 # Node / build output
 node_modules/
 dist/
+.planes_setup_complete
