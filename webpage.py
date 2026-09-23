@@ -577,7 +577,7 @@ def dashboard_content() -> str:
 
           const list = [...aircraftData].filter(a => {{
             if (!a || typeof a !== 'object') return false;
-            const meta = metadataCache.get(String(a.hex || '').toLowerCase()) || {};
+            const meta = metadataCache.get(String(a.hex || '').toLowerCase()) || {{}};
             const text = [a.flight || a.callsign || a.fn || '', a.t || '', a.desc || '', a.hex || '', a.r || a.registration || '', a.manufacturer || '', a.type || '', meta.type || '', meta.icao_type || '', meta.manufacturer || '', meta.registration || ''].join(' ').toLowerCase();
             const vr = Number(a.baro_rate ?? a.geom_rate);
             const gs = Number(a.gs);
@@ -688,7 +688,7 @@ def dashboard_content() -> str:
           const button = event.target.closest('[data-favourite]');
           if (button) toggleFavourite(button.dataset.favourite);
         }});
-        search.addEventListener('input', () => { renderRows(); enrichVisibleAircraft(); });
+        search.addEventListener('input', () => {{ renderRows(); enrichVisibleAircraft(); }});
         search.addEventListener('keydown', event => {{
           if (event.key === 'Escape' && search.value) {{
             search.value = '';
