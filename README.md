@@ -190,7 +190,7 @@ The Dashboard provides:
 - live aircraft count
 - feed status
 - receiver data age
-- search by callsign, type, description, registration and HEX
+- search by callsign, type/description, registration, HEX and other available metadata
 - sorting by flight, type, speed, altitude and distance
 - moving, climbing, descending and valid-position filters
 - favourites
@@ -205,10 +205,11 @@ Aircraft fields depend on what readsb supplies. Missing values are normal.
 
 Details can include:
 
-- ICAO HEX
-- callsign
+- ICAO HEX / Mode-S
+- flight number and ICAO/IATA callsign when available
 - registration
-- aircraft type/description
+- aircraft type and ICAO type
+- manufacturer and operator/owner metadata from ADSBDB when available
 - squawk
 - altitude
 - ground speed
@@ -216,26 +217,18 @@ Details can include:
 - heading
 - latitude/longitude
 - distance and bearing
+- signal level
 - scheduled route information from ASBDB when available
 
 ## Statistics
 
-The Statistics page currently includes:
+The Statistics page is split into three periods:
 
-- aircraft visible
-- aircraft with valid positions
-- moving
-- climbing
-- descending
-- average altitude
-- average speed
-- highest altitude
-- fastest speed
-- feed state
-- feed response time
-- aircraft type counts
+- **Live snapshot** — what is happening right now.
+- **Since Planes started** — session metrics such as unique aircraft seen, peak/average aircraft count, highest altitude, fastest speed, snapshots and feed interruptions.
+- **Since readsb started** — receiver totals from readsb stats.json, including running time, accepted messages, tracks, CPR positions, SDR blocks and signal information when available.
 
-Statistics use the current receiver data only. There is no historical database yet.
+This gives you both current activity and running-period totals without treating a live snapshot as historical data.
 
 ## Settings
 
@@ -270,11 +263,13 @@ curl -I http://127.0.0.1:8000/
 
 ### Aircraft type says Unknown
 
-Planes uses the receiver's `t`/`type`/`desc` fields for aircraft type and `flight`/`callsign`/`fn` for the callsign. If those fields are missing, Planes shows a clear fallback instead of a blank cell.
+In readsb, the `type` field describes the message/source type such as `adsb_icao` or `mlat`; it is not the aircraft model. Planes therefore uses `t`/`desc` for the displayed aircraft type. The current receiver feed may legitimately omit those database fields.
+
+Aircraft detail pages can query ADSBDB by the normal six-character Mode-S HEX to fill in registration, aircraft type, manufacturer and related metadata when available.
 
 ### Route information is missing
 
-ASBDB is optional and may not have a route for every callsign.
+ASBDB is optional and may not have a route for every callsign. A live receiver object must also provide a usable flight/callsign before a route lookup can be made.
 
 ### Dependency installation fails
 
@@ -329,6 +324,10 @@ planes/
 - page loads
 - aircraft appear
 - aircraft rows contain Flight and Aircraft values (or a clear fallback)
+- `adsb_icao` / `mlat` are not displayed as aircraft model names
+- non-ICAO `~xxxxxx` readsb identifiers can open details and be favourited
+- search reports its match count
+- favourite state survives refreshes
 - aircraft count updates
 - data age updates
 - automatic refresh works
@@ -359,8 +358,8 @@ planes/
 
 ### Other pages
 
-- Statistics
-- Aircraft Details
+- Statistics, including live, Planes-session and readsb-period sections
+- Aircraft Details, including ADSBDB metadata enrichment
 - Documentation
 - About
 - Contact
@@ -403,11 +402,11 @@ This avoids the piwheels package-metadata problem reported during installation o
 
 ### readsb / tar1090
 
-Live aircraft JSON.
+Live aircraft JSON plus stats.json receiver-period statistics.
 
 ### ASBDB
 
-Optional scheduled flight/route/airline information. It is not the source of live aircraft position data.
+Optional aircraft metadata and scheduled flight/route/airline information. It is not the source of live aircraft position data.
 
 ## Roadmap
 
