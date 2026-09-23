@@ -509,7 +509,7 @@ def dashboard_content() -> str:
         <tbody id="flight-rows">{rows}</tbody>
       </table>
     </div>
-    <p class="help-text">Updates automatically every {refresh} seconds. Search and favourites stay on this device. Press Escape in the search box to clear it.</p>
+    <p id="search-status" class="help-text">Updates automatically every {refresh} seconds. Search and favourites stay on this device. Press Escape in the search box to clear it.</p>
     <script>
       (() => {{
         const tbody = document.getElementById('flight-rows');
@@ -524,6 +524,7 @@ def dashboard_content() -> str:
         const minSpeed = document.getElementById('min-speed');
         const clearFilters = document.getElementById('clear-filters');
         const tableStatus = document.getElementById('table-status');
+        const searchStatus = document.getElementById('search-status');
         const refreshButton = document.getElementById('refresh-now');
         const REFRESH_SECONDS = {refresh};
         let aircraftData = {initial_json};
@@ -535,7 +536,7 @@ def dashboard_content() -> str:
         function favouriteState() {{
           try {{
             const value = JSON.parse(localStorage.getItem('planes-favourites') || '[]');
-            return Array.isArray(value) ? value : [];
+            return Array.isArray(value) ? value.map(v => String(v).trim().toLowerCase()) : [];
           }} catch {{ return []; }}
         }}
         function toggleFavourite(key) {{
@@ -551,6 +552,7 @@ def dashboard_content() -> str:
         }}
         function renderRows() {{
           const q = search.value.trim().toLowerCase();
+          const searchTerms = [q, q.replace(/^icao\s+/, '')].filter(Boolean);
           const key = sort.value;
           const hasMinAlt = minAltitude.value.trim() !== '';
           const hasMinSpd = minSpeed.value.trim() !== '';
@@ -560,7 +562,7 @@ def dashboard_content() -> str:
 
           const list = [...aircraftData].filter(a => {{
             if (!a || typeof a !== 'object') return false;
-            const text = [a.flight || a.callsign || a.fn || '', a.t || a.type || '', a.desc || '', a.hex || '', a.r || a.registration || ''].join(' ').toLowerCase();
+            const text = [a.flight || a.callsign || a.fn || '', a.t || '', a.desc || '', a.hex || '', a.r || a.registration || '', a.manufacturer || '', a.type || ''].join(' ').toLowerCase();
             const vr = Number(a.baro_rate ?? a.geom_rate);
             const gs = Number(a.gs);
             const alt = Number(a.alt_baro);
@@ -571,16 +573,17 @@ def dashboard_content() -> str:
               (filter.value === 'climbing' && Number.isFinite(vr) && vr > 100) ||
               (filter.value === 'descending' && Number.isFinite(vr) && vr < -100) ||
               (filter.value === 'position' && hasPosition) ||
-              (filter.value === 'favourite' && favs.has(String(a.hex || '').toLowerCase()));
+              (filter.value === 'favourite' && favs.has(String(a.hex || '').trim().toLowerCase()));
             const altitudeMatches = !hasMinAlt || (Number.isFinite(alt) && alt >= minAlt);
             const speedMatches = !hasMinSpd || (Number.isFinite(gs) && gs >= minSpd);
-            return text.includes(q) && altitudeMatches && speedMatches && matchesFilter;
+            const textMatches = !searchTerms.length || searchTerms.some(term => text.includes(term));
+            return textMatches && altitudeMatches && speedMatches && matchesFilter;
           }});
 
           list.sort((a,b) => {{
             if (key === 'speed') return Number(b.gs ?? -1) - Number(a.gs ?? -1);
             if (key === 'altitude') return Number(b.alt_baro ?? -1) - Number(a.alt_baro ?? -1);
-            if (key === 'type') return String(a.t || a.type || a.desc || '').localeCompare(String(b.t || b.type || b.desc || ''));
+            if (key === 'type') return String(a.t || a.desc || '').localeCompare(String(b.t || b.desc || ''));
             if (key === 'distance') return Number(b.r_dst ?? -1) - Number(a.r_dst ?? -1);
             return String(a.flight || a.callsign || a.fn || '').localeCompare(String(b.flight || b.callsign || b.fn || ''));
           }});
@@ -588,7 +591,7 @@ def dashboard_content() -> str:
           tbody.innerHTML = list.length ? list.map(a => {{
             const safeAircraft = (a && typeof a === 'object') ? a : {{}};
             const flight = String(safeAircraft.flight || safeAircraft.callsign || safeAircraft.fn || (safeAircraft.hex ? 'ICAO ' + String(safeAircraft.hex).toUpperCase() : 'Unknown')).trim();
-            const type = safeAircraft.t || safeAircraft.type || safeAircraft.desc || 'Type unavailable';
+            const type = safeAircraft.t || safeAircraft.desc || 'Type unavailable';
             const hex = String(safeAircraft.hex || '').toLowerCase();
             const registration = String(safeAircraft.r || safeAircraft.registration || '').trim();
             const favOn = favs.has(hex);
