@@ -618,7 +618,7 @@ def dashboard_content() -> str:
             const manufacturer = String(meta.manufacturer || '').trim();
             const typeExtra = manufacturer ? '<small class="unit">'+esc(manufacturer)+'</small>' : '';
             const favOn = favs.has(hex);
-            const validHex = /^[0-9a-f]{{6}}$/i.test(hex);
+            const validHex = /^~?[0-9a-f]{{6}}$/i.test(hex);
             const details = validHex ? '/aircraft/' + encodeURIComponent(hex) : '#';
             const registrationHtml = registration ? '<small class="unit">'+esc(registration)+'</small>' : '';
             const favouriteHtml = validHex ? '<button type="button" class="favourite-button" data-favourite="'+esc(hex)+'" aria-label="'+(favOn ? 'Remove ' : 'Add ')+'favourite" aria-pressed="'+favOn+'">'+(favOn ? '★' : '☆')+'</button>' : '';
@@ -632,7 +632,7 @@ def dashboard_content() -> str:
             .filter(a => a && typeof a === 'object')
             .filter(a => /^~?[0-9a-f]{6}$/i.test(String(a.hex || '')))
             .filter(a => !a.t && !a.desc && !metadataCache.has(String(a.hex).toLowerCase()) && !metadataRequested.has(String(a.hex).toLowerCase()))
-            .slice(0, 16);
+            .slice(0, 20);
           if (!candidates.length) return;
           candidates.forEach(a => metadataRequested.add(String(a.hex).toLowerCase()));
           for (const aircraft of candidates) {{
@@ -688,7 +688,7 @@ def dashboard_content() -> str:
           const button = event.target.closest('[data-favourite]');
           if (button) toggleFavourite(button.dataset.favourite);
         }});
-        search.addEventListener('input', renderRows);
+        search.addEventListener('input', () => { renderRows(); enrichVisibleAircraft(); });
         search.addEventListener('keydown', event => {{
           if (event.key === 'Escape' && search.value) {{
             search.value = '';
