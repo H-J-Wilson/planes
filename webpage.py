@@ -798,7 +798,17 @@ static/            CSS, icons and browser assets
 tests/             automated tests
 README.md          setup and testing guide</code></pre>
 
-      <h2>16. Release state</h2>
+      <h2>16. Raspberry Pi testing</h2>
+      <p>The repository includes <code>scripts/pi_smoke_test.sh</code>. It is a safe, non-destructive smoke test for a running Raspberry Pi installation.</p>
+      <pre><code>cd ~/planes
+bash scripts/pi_smoke_test.sh</code></pre>
+      <p>It checks Python imports and syntax, the readsb service, the live aircraft JSON feed, the Planes HTTP server, the main pages, the Dashboard API and both feed-test endpoints. It does not stop services or modify <code>settings.json</code>.</p>
+      <p>A separate manual recovery test should stop readsb, wait for one or more Dashboard refreshes, confirm Planes keeps the last known-good aircraft data and reports a stale/unavailable feed, then restart readsb and confirm live updates resume.</p>
+      <pre><code>sudo systemctl stop readsb
+# wait for a Dashboard refresh
+sudo systemctl start readsb</code></pre>
+
+      <h2>17. Release state</h2>
       <p><strong>v0.0.5 audit fixes</strong>. This branch contains fixes found during manual post-release testing. It should not be treated as the next release until the Pi test checklist passes.</p>
     </section>'''
     return page("Documentation", content, "documentation")
