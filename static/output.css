@@ -95,7 +95,16 @@ tbody tr:last-child td { border-bottom:0; }
 .help-text, .field-help, .muted, .prose p { color:var(--muted); }
 .sr-status { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
 
-.stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; margin-bottom:1rem; }
+.stats-section { margin-bottom:1.5rem; }
+.stats-section:last-of-type { margin-bottom:1rem; }
+.section-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin-bottom:.75rem; }
+.section-heading h2 { margin:0; }
+.section-note { color:var(--muted); font-size:.8rem; font-weight:700; }
+.stats-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; }
+.stat-card { min-height:150px; display:flex; flex-direction:column; justify-content:space-between; }
+.stat-card strong { font-size:1.6rem; line-height:1.1; margin:.5rem 0; overflow-wrap:anywhere; }
+.stat-card p { margin:.35rem 0 0; }
+.stats-columns { display:grid; grid-template-columns:1.15fr .85fr; gap:1rem; }
 .panel + .panel { margin-top:1rem; }
 .panel strong { font-size:1.5rem; }
 .panel small { font-size:.8rem; color:var(--muted); }
@@ -137,6 +146,11 @@ dt { color:var(--muted); font-weight:700; } dd { margin:0; text-align:right; ove
 .skip-link { position:absolute; left:1rem; top:-5rem; background:var(--text); color:var(--bg); padding:.75rem 1rem; z-index:99; border-radius:8px; }
 .skip-link:focus { top:1rem; }
 
+@media (max-width: 900px) {
+  .stats-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .stats-columns { grid-template-columns:1fr; }
+}
+
 @media (max-width: 760px) {
   .site-header { align-items:flex-start; flex-direction:column; }
   nav { width:100%; justify-content:flex-start; overflow:auto; }
@@ -146,6 +160,7 @@ dt { color:var(--muted); font-weight:700; } dd { margin:0; text-align:right; ove
   .toolbar .search-wrap { grid-column:1 / -1; }
   .toolbar .button { grid-column:1 / -1; }
   .stats-strip, .stats-grid { grid-template-columns:1fr; }
+  .section-heading { align-items:flex-start; flex-direction:column; gap:.25rem; }
   .table-card { border:0; background:transparent; overflow:visible; }
   table, thead, tbody, tr, th, td { display:block; width:100%; }
   thead { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
