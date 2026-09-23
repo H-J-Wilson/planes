@@ -135,8 +135,9 @@ def test_dashboard_contains_metadata_enrichment_hook(monkeypatch):
 def test_dashboard_handles_missing_type_without_using_source_type(monkeypatch):
     sample = {"aircraft": [{"hex": "4cad7d", "type": "adsb_icao", "gs": 390.3, "alt_baro": 30650}]}
     monkeypatch.setattr(webpage, "get_aircraft_data", lambda: (sample, 0.01))
+    rows = webpage.aircraft_rows(sample["aircraft"])
     html = webpage.dashboard_content()
-    assert "adsb_icao" not in html
+    assert "adsb_icao" not in rows
     assert "Looking up" in html
 
 
