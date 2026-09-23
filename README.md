@@ -139,6 +139,7 @@ It checks:
 - `/api/dashboard-data`
 - `/api/test-feed`
 - `/api/test-feed-url`
+- `/api/aircraft-metadata/<hex>`
 - invalid feed URL rejection
 - invalid aircraft identifier rejection
 
@@ -203,6 +204,8 @@ Aircraft fields depend on what readsb supplies. Missing values are normal.
 
 ## Aircraft details
 
+The details page is organised into identity, live flight data, navigation/transponder data, receiver/signal data and scheduled route information. Identity is enriched from ADSBDB by Mode-S HEX when available; live telemetry remains from readsb.
+
 Details can include:
 
 - ICAO HEX / Mode-S
@@ -222,7 +225,7 @@ Details can include:
 
 ## Statistics
 
-The Statistics page is split into three periods:
+The Statistics page is split into three periods, with the longer periods collapsible so the page keeps the full set of metrics without becoming a wall of cards:
 
 - **Live snapshot** — what is happening right now.
 - **Since Planes started** — session metrics such as unique aircraft seen, peak/average aircraft count, highest altitude, fastest speed, snapshots and feed interruptions.
@@ -328,6 +331,7 @@ planes/
 - non-ICAO `~xxxxxx` readsb identifiers can open details and be favourited
 - search reports its match count
 - favourite state survives refreshes
+- missing aircraft types begin enriching automatically
 - aircraft count updates
 - data age updates
 - automatic refresh works
