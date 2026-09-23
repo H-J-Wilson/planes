@@ -98,22 +98,69 @@ python main.py
 
 This branch is a test candidate, not a released version.
 
-When testing is finished:
+## Raspberry Pi smoke test
+
+The repository includes a **safe, non-destructive** Pi smoke test. It does not stop or restart readsb/Planes and does not modify `settings.json`.
+
+Run it from the Planes directory:
 
 ```bash
-git checkout main
-git pull
+cd ~/planes
+bash scripts/pi_smoke_test.sh
 ```
 
-## Raspberry Pi dependency note
+It checks:
 
-The project requirements force pip to use PyPI directly:
+- Python and required imports
+- Python syntax
+- readsb service state
+- the live aircraft JSON feed
+- Planes on port 8000
+- Dashboard, Statistics, Settings, Documentation, About and Contact
+- `/api/dashboard-data`
+- `/api/test-feed`
+- `/api/test-feed-url`
+
+A normal successful result ends with:
 
 ```text
---index-url https://pypi.org/simple
+Result: PASSED
 ```
 
-This avoids a piwheels package-metadata problem that can cause pip to reject some Jinja2 and typing-extensions wheels.
+Warnings do not fail the script. Any `FAIL` result makes the script exit with code 1.
+
+You can override the URLs without editing the script:
+
+```bash
+PLANES_URL=http://127.0.0.1:8000 \
+FEED_URL=http://127.0.0.1:8504/data/aircraft.json \
+bash scripts/pi_smoke_test.sh
+```
+
+The smoke test checks whether the system is working; it does not test recovery from a deliberately broken feed. Use the manual feed-failure test below for that.
+
+## Manual feed-failure test
+
+This is the important reliability test after the smoke test passes.
+
+1. Open Planes and wait for aircraft to appear.
+2. On the Pi run:
+
+```bash
+sudo systemctl stop readsb
+```
+
+3. Wait for at least one Dashboard refresh.
+4. Confirm the aircraft list remains visible and the status changes to stale/unavailable.
+5. Start readsb again:
+
+```bash
+sudo systemctl start readsb
+```
+
+6. Wait for fresh data and confirm the Dashboard returns to a live/healthy state.
+
+This is intentionally manual so the test cannot accidentally disrupt the receiver.
 
 ## Dashboard
 
@@ -235,6 +282,8 @@ planes/
 ├── settings.json
 ├── requirements.txt
 ├── static/
+├── scripts/
+│   └── pi_smoke_test.sh
 ├── tests/
 └── README.md
 ```
@@ -246,6 +295,8 @@ planes/
 `settings.json` stores local application settings.
 
 `requirements.txt` defines Python dependencies.
+
+`scripts/pi_smoke_test.sh` checks the running Pi installation without changing it.
 
 `tests/` contains backend reliability tests.
 
@@ -272,29 +323,6 @@ planes/
 - sorting works
 - favourite star works
 - aircraft details open
-
-### Feed failure
-
-Temporarily stop readsb:
-
-```bash
-sudo systemctl stop readsb
-```
-
-Confirm:
-
-- Planes stays open
-- existing aircraft remain visible
-- feed status changes to stale/unavailable
-- the UI does not say the feed is healthy
-
-Restart readsb:
-
-```bash
-sudo systemctl start readsb
-```
-
-Confirm live updates resume.
 
 ### Settings
 
@@ -328,7 +356,7 @@ python -m py_compile main.py webpage.py
 python -m unittest discover -s tests -v
 ```
 
-GitHub Actions also compiles and tests the project on Python 3.10–3.13.
+GitHub Actions also compiles and tests the project on Python 3.10–3.13 and checks the Pi smoke-test script syntax.
 
 ## Current release state
 
@@ -337,6 +365,16 @@ Latest released version: **v0.0.5**
 The branch `v0.0.5-audit-fixes` contains reliability and polish fixes found during post-release testing.
 
 Do not treat the audit branch as a release until the Pi checklist passes.
+
+## Raspberry Pi dependency note
+
+The project requirements force pip to use PyPI directly:
+
+```text
+--index-url https://pypi.org/simple
+```
+
+This avoids the piwheels package-metadata problem reported during installation on Raspberry Pi OS.
 
 ## Data sources
 
