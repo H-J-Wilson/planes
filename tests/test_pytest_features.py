@@ -80,6 +80,35 @@ def test_aircraft_rows_support_non_icao_ids():
     assert "ICAO 3B8C8C" in rows
 
 
+def test_fr24_live_identity_uses_local_feed(monkeypatch):
+    monkeypatch.setattr(
+        webpage.requests,
+        "get",
+        Mock(return_value=Mock(
+            status_code=200,
+            json=lambda: {
+                "aircraft": [
+                    {"mode_s": "4CAD7D", "callsign": "TEST123", "reg_num": "G-TEST", "type": "B738"},
+                ]
+            },
+            raise_for_status=lambda: None,
+        )),
+    )
+    webpage._fr24_live_cache = (0.0, {})
+    identity = webpage.fr24_live_identity("4cad7d")
+    assert identity["callsign"] == "TEST123"
+    assert identity["registration"] == "G-TEST"
+    assert identity["type"] == "B738"
+
+
+def test_metadata_includes_live_fr24_identity(monkeypatch):
+    monkeypatch.setattr(webpage, "fr24_live_identity", lambda hex_code: {"callsign": "TEST123"})
+    monkeypatch.setattr(webpage, "aircraft_metadata_lookup", lambda hex_code, callsign: None)
+    result = webpage.metadata_for_aircraft("4cad7d")
+    assert result["ok"] is True
+    assert result["live_identity"]["callsign"] == "TEST123"
+
+
 def test_metadata_lookup_caches_per_hex_and_callsign(monkeypatch):
     response = Mock(status_code=200)
     response.raise_for_status.return_value = None
