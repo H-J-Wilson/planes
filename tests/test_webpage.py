@@ -162,6 +162,56 @@ class PlanesTests(unittest.TestCase):
         self.assertEqual(request.call_count, 1)
         self.assertIn("/v0/aircraft/abc123?callsign=TEST01", request.call_args[0][0])
 
+    def test_aircraft_metadata_endpoint_returns_json(self):
+        sample = {"aircraft": [{"hex": "abc123", "flight": "TEST01"}]}
+        webpage.load_settings = lambda: dict(webpage.DEFAULT_SETTINGS)
+        with patch("webpage.get_aircraft_data", return_value=(sample, 0.01)), patch(
+            "webpage.metadata_for_aircraft",
+            return_value={
+                "ok": True,
+                "aircraft": {"registration": "G-TEST", "type": "B738"},
+                "flightroute": {"callsign_icao": "TEST01"},
+            },
+        ):
+            response = webpage.get_aircraft_metadata("abc123")
+        self.assertEqual(response.status_code, 200)
+        body = response.body.decode("utf-8")
+        self.assertIn('"registration":"G-TEST"', body)
+        self.assertIn('"type":"B738"', body)
+        self.assertIn('"callsign_icao":"TEST01"', body)
+
+    def test_detail_fragment_contains_live_telemetry_sections(self):
+        sample = {
+            "aircraft": [{
+                "hex": "abc123",
+                "flight": "TEST01",
+                "gs": 250,
+                "ias": 230,
+                "tas": 270,
+                "mach": 0.71,
+                "alt_baro": 18000,
+                "alt_geom": 19000,
+                "track": 270,
+                "baro_rate": -500,
+                "lat": 51.0,
+                "lon": -1.0,
+                "r_dst": 40,
+                "r_dir": 180,
+                "squawk": "1234",
+                "messages": 1000,
+                "seen": 0.5,
+                "rssi": -20,
+            }]
+        }
+        webpage.load_settings = lambda: dict(webpage.DEFAULT_SETTINGS)
+        with patch("webpage.get_aircraft_data", return_value=(sample, 0.01)), patch(
+            "webpage.aircraft_metadata_lookup",
+            return_value={},
+        ):
+            content = webpage.detail_fragment("abc123")
+        for text in ("Aircraft identity", "Live flight data", "Navigation and transponder", "Receiver / signal data", "Ground speed", "Mach", "Squawk", "RSSI"):
+            self.assertIn(text, content)
+
     def test_detail_fragment_uses_metadata_when_feed_is_missing_identity(self):
         sample = {"aircraft": [{"hex": "abc123", "gs": 250, "alt_baro": 18000}]}
         webpage.load_settings = lambda: dict(webpage.DEFAULT_SETTINGS)
