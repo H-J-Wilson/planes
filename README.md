@@ -53,6 +53,23 @@ curl http://127.0.0.1:8504/data/aircraft.json
 
 The response should be JSON containing an `aircraft` list.
 
+## First-run setup
+
+On a new installation, opening Planes shows a short setup screen before the Dashboard.
+
+It asks for:
+
+- **Aircraft data URL** — normally `http://127.0.0.1:8504/data/aircraft.json`
+- **Refresh interval**
+- **Base theme** — system, dark or light
+- **ASBDB route lookups** — optional
+
+Use **Test feed** before saving the URL. Then choose **Save and open Planes**.
+
+The setup completion marker is stored locally as `.planes_setup_complete` and is ignored by Git. Existing settings are prefilled, so an existing installation can normally keep the current configuration.
+
+Settings can be changed later from **Settings**.
+
 ## Update
 
 Stop Planes first.
@@ -116,10 +133,14 @@ It checks:
 - readsb service state
 - the live aircraft JSON feed
 - Planes on port 8000
-- Dashboard, Statistics, Settings, Documentation, About and Contact
+- Dashboard/HTML aircraft-row rendering
+- Dashboard, Statistics, Settings, Documentation, About, Contact and Setup
+- `/static/output.css`
 - `/api/dashboard-data`
 - `/api/test-feed`
 - `/api/test-feed-url`
+- invalid feed URL rejection
+- invalid aircraft identifier rejection
 
 A normal successful result ends with:
 
@@ -249,7 +270,7 @@ curl -I http://127.0.0.1:8000/
 
 ### Aircraft type says Unknown
 
-Planes displays the `t` or `desc` information supplied by the receiver. If both are missing, there is no type available from the feed.
+Planes uses the receiver's `t`/`type`/`desc` fields for aircraft type and `flight`/`callsign`/`fn` for the callsign. If those fields are missing, Planes shows a clear fallback instead of a blank cell.
 
 ### Route information is missing
 
@@ -304,8 +325,10 @@ planes/
 
 ### Dashboard
 
+- first-run setup completes
 - page loads
 - aircraft appear
+- aircraft rows contain Flight and Aircraft values (or a clear fallback)
 - aircraft count updates
 - data age updates
 - automatic refresh works
