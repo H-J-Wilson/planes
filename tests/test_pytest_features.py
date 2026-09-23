@@ -176,6 +176,14 @@ def test_metadata_endpoint_uses_current_callsign(monkeypatch):
     lookup.assert_called_once_with("4cad7d", "TEST123")
 
 
+def test_dashboard_parallel_metadata_workers_are_used(monkeypatch):
+    sample = {"aircraft": [{"hex": "4cad7d", "gs": 390.3, "alt_baro": 30650}]}
+    monkeypatch.setattr(webpage, "get_aircraft_data", lambda: (sample, 0.01))
+    html = webpage.dashboard_content()
+    assert "const workers = Math.min(6, queue.length);" in html
+    assert "await Promise.all(Array.from({length: workers}" in html
+
+
 def test_dashboard_contains_metadata_enrichment_hook(monkeypatch):
     sample = {"aircraft": [{"hex": "4cad7d", "gs": 390.3, "alt_baro": 30650}]}
     monkeypatch.setattr(webpage, "get_aircraft_data", lambda: (sample, 0.01))
