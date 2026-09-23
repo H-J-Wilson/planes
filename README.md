@@ -16,13 +16,11 @@ Default feed:
 http://127.0.0.1:8504/data/aircraft.json
 ```
 
-The default assumes readsb/tar1090 and Planes run on the same machine.
-
 ## Requirements
 
+- Raspberry Pi/Linux/macOS
 - Python 3.10+
 - Working readsb/tar1090 aircraft JSON feed
-- Network access to the machine running Planes
 
 ## Install
 
@@ -47,9 +45,7 @@ Example:
 http://192.168.0.33:8000
 ```
 
-## First check: the aircraft feed
-
-Before debugging Planes, make sure the receiver is producing aircraft data:
+Before troubleshooting Planes, check the receiver feed:
 
 ```bash
 curl http://127.0.0.1:8504/data/aircraft.json
@@ -57,11 +53,9 @@ curl http://127.0.0.1:8504/data/aircraft.json
 
 The response should be JSON containing an `aircraft` list.
 
-If this fails, fix readsb/tar1090 first.
+## Update
 
-## Updating Planes
-
-Stop the running Planes process first.
+Stop Planes first.
 
 Check for local changes:
 
@@ -70,20 +64,21 @@ cd ~/planes
 git status
 ```
 
-For the normal `main` branch:
+For the normal development branch:
 
 ```bash
+git checkout main
 git pull
 source venv/bin/activate
 pip install -r requirements.txt
 python main.py
 ```
 
-Do not run `git pull` when `git status` shows changes you need to keep. Back them up first.
+Do not run `git pull` when `git status` shows work you need to keep.
 
-### Testing the current audit-fix branch
+## Testing the current fixes
 
-The reliability fixes are currently on:
+The current reliability fixes are on:
 
 ```text
 v0.0.5-audit-fixes
@@ -93,7 +88,6 @@ On the Pi:
 
 ```bash
 cd ~/planes
-git status
 git fetch origin
 git checkout v0.0.5-audit-fixes
 git pull
@@ -102,30 +96,40 @@ pip install -r requirements.txt
 python main.py
 ```
 
-When testing is finished, return to `main` with:
+This branch is a test candidate, not a released version.
+
+When testing is finished:
 
 ```bash
 git checkout main
 git pull
 ```
 
-Do not delete the branch until testing is complete.
+## Raspberry Pi dependency note
+
+The project requirements force pip to use PyPI directly:
+
+```text
+--index-url https://pypi.org/simple
+```
+
+This avoids a piwheels package-metadata problem that can cause pip to reject some Jinja2 and typing-extensions wheels.
 
 ## Dashboard
 
 The Dashboard provides:
 
-- Live aircraft count
-- Feed status
-- Data age when supplied by the feed
-- Search by callsign, aircraft type, description, registration or ICAO HEX
-- Sorting by flight, type, speed, altitude or distance
-- Moving/climbing/descending filters
-- Valid-position filter
-- Favourite filter
-- Minimum altitude and speed filters
-- Local favourites
-- Aircraft detail links
+- live aircraft count
+- feed status
+- receiver data age
+- search by callsign, type, description, registration and HEX
+- sorting by flight, type, speed, altitude and distance
+- moving, climbing, descending and valid-position filters
+- favourites
+- minimum altitude and speed filters
+- manual refresh
+- automatic refresh
+- aircraft detail links
 
 Aircraft fields depend on what readsb supplies. Missing values are normal.
 
@@ -134,31 +138,47 @@ Aircraft fields depend on what readsb supplies. Missing values are normal.
 Details can include:
 
 - ICAO HEX
-- Callsign
-- Aircraft type/description
-- Squawk
-- Altitude
-- Ground speed
-- Latitude/longitude
-- Distance and bearing
-- ASBDB route information when available
+- callsign
+- registration
+- aircraft type/description
+- squawk
+- altitude
+- ground speed
+- vertical rate
+- heading
+- latitude/longitude
+- distance and bearing
+- scheduled route information from ASBDB when available
 
 ## Statistics
 
-The Statistics page summarises the aircraft currently visible to the receiver.
+The Statistics page currently includes:
 
-Values depend on the data currently supplied by readsb. Missing or invalid measurements are excluded where appropriate.
+- aircraft visible
+- aircraft with valid positions
+- moving
+- climbing
+- descending
+- average altitude
+- average speed
+- highest altitude
+- fastest speed
+- feed state
+- feed response time
+- aircraft type counts
+
+Statistics use the current receiver data only. There is no historical database yet.
 
 ## Settings
 
 Settings controls:
 
 - **Aircraft data URL** — JSON feed used by Planes
-- **Refresh interval** — browser refresh interval
-- **ASBDB** — optional route lookups
+- **Refresh interval** — browser refresh rate
+- **ASBDB** — optional scheduled route lookup
 - **Theme** — system, dark or light
 
-Use **Test feed** before saving a new feed URL. On the audit-fix branch, the test checks the URL currently typed into the box rather than only the saved URL.
+Use **Test feed** before saving a new URL. It checks the URL currently typed into the box.
 
 ## Favourites
 
@@ -173,8 +193,6 @@ curl http://127.0.0.1:8504/data/aircraft.json
 systemctl status readsb
 ```
 
-Check that the URL in Settings matches the working feed URL.
-
 ### Planes will not load
 
 ```bash
@@ -182,26 +200,25 @@ ss -ltnp | grep :8000
 curl -I http://127.0.0.1:8000/
 ```
 
-If it works on the Pi but not another device, check the Pi IP/network/firewall.
-
 ### Aircraft type says Unknown
 
-Planes displays the type information supplied by the receiver. If `t` and `desc` are missing, the UI cannot display a type from the feed alone.
+Planes displays the `t` or `desc` information supplied by the receiver. If both are missing, there is no type available from the feed.
 
-### Route is missing
+### Route information is missing
 
-ASBDB is optional and does not have matching information for every callsign.
+ASBDB is optional and may not have a route for every callsign.
 
-### Settings or dependency errors
+### Dependency installation fails
+
+Activate the virtual environment and retry:
 
 ```bash
 source venv/bin/activate
-python --version
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### Port 8000 already in use
+### Port 8000 is already in use
 
 ```bash
 ss -ltnp | grep :8000
@@ -209,113 +226,137 @@ ss -ltnp | grep :8000
 
 Stop the existing Planes process before starting another one.
 
-## Development
-
-Main files:
+## Project structure
 
 ```text
 planes/
 ├── main.py
 ├── webpage.py
-├── runtime_fixes.py        # audit branch reliability layer
-├── requirements.txt
 ├── settings.json
-└── static/
+├── requirements.txt
+├── static/
+├── tests/
+└── README.md
 ```
 
-`main.py` starts Uvicorn. `webpage.py` contains the FastAPI app, routes, HTML and browser JavaScript. `runtime_fixes.py` contains the temporary audit-branch reliability fixes that will be folded into the main application after testing.
+`main.py` starts Uvicorn.
 
-For a detailed code walkthrough, use the **Documentation** page inside Planes.
+`webpage.py` contains the FastAPI application, routes, feed handling, HTML generation and Dashboard JavaScript.
+
+`settings.json` stores local application settings.
+
+`requirements.txt` defines Python dependencies.
+
+`tests/` contains backend reliability tests.
 
 ## Testing checklist
 
-Before merging a release candidate, test:
-
 ### Dashboard
 
-- Page loads
-- Aircraft appear
-- Aircraft count changes with feed data
-- Data age is shown
-- Automatic refresh changes the list
-- Manual Refresh works
-- Search works for callsign
-- Search works for HEX
-- Search works for type/description
-- Search works for registration
-- Clearing search restores the list
-- Sorting works
-- Moving filter works
-- Climbing filter works
-- Descending filter works
-- Valid position filter works
-- Favourite filter works
-- Minimum altitude works
-- Minimum speed works
-- Clearing filters restores the list
-- Favourite star can be added and removed
-- Aircraft details open
+- page loads
+- aircraft appear
+- aircraft count updates
+- data age updates
+- automatic refresh works
+- manual refresh works
+- callsign search works
+- HEX search works
+- type/description search works
+- registration search works
+- clearing search works
+- all/moving/climbing/descending filters work
+- valid-position filter works
+- favourites filter works
+- minimum altitude works
+- minimum speed works
+- sorting works
+- favourite star works
+- aircraft details open
 
-### Failure behaviour
+### Feed failure
 
-Temporarily make the configured feed unavailable and confirm:
+Temporarily stop readsb:
 
-- The page does not crash
-- Previously loaded aircraft remain visible
-- Feed status changes to a stale/unavailable state
-- The UI does not falsely report the feed as healthy
-- Restoring the feed returns to normal updates
+```bash
+sudo systemctl stop readsb
+```
+
+Confirm:
+
+- Planes stays open
+- existing aircraft remain visible
+- feed status changes to stale/unavailable
+- the UI does not say the feed is healthy
+
+Restart readsb:
+
+```bash
+sudo systemctl start readsb
+```
+
+Confirm live updates resume.
 
 ### Settings
 
-- Save a valid feed URL
-- Test a valid feed URL
-- Enter an invalid feed URL and confirm an error is shown
-- Test a URL before saving it
-- Change refresh interval
-- Toggle ASBDB
-- Change theme
+- test the current URL
+- test a bad URL
+- test an unsaved new URL
+- save a valid URL
+- change refresh interval
+- toggle ASBDB
+- change theme
 
 ### Other pages
 
-- Statistics loads
-- Aircraft details load
-- Documentation loads
-- About loads
-- Contact loads
+- Statistics
+- Aircraft Details
+- Documentation
+- About
+- Contact
 
-### Mobile/accessibility
+### Mobile
 
-- Test a narrow mobile viewport
-- Keyboard navigation works
-- Focus is visible
-- Light and dark themes work
-- Reduced-motion behaviour does not break the UI
+Check a narrow browser window and make sure controls and tables still fit.
 
-## Current version
+## Automated tests
 
-The latest released version is **v0.0.5**. The `v0.0.5-audit-fixes` branch contains reliability fixes found during post-release testing and is not a release yet.
+Run locally with:
+
+```bash
+source venv/bin/activate
+python -m py_compile main.py webpage.py
+python -m unittest discover -s tests -v
+```
+
+GitHub Actions also compiles and tests the project on Python 3.10–3.13.
+
+## Current release state
+
+Latest released version: **v0.0.5**
+
+The branch `v0.0.5-audit-fixes` contains reliability and polish fixes found during post-release testing.
+
+Do not treat the audit branch as a release until the Pi checklist passes.
 
 ## Data sources
 
 ### readsb / tar1090
 
-Provides the live aircraft JSON used by Planes.
+Live aircraft JSON.
 
 ### ASBDB
 
-Provides optional scheduled route/airline information for callsigns when available. It is not the source of live aircraft position data.
+Optional scheduled flight/route/airline information. It is not the source of live aircraft position data.
 
 ## Roadmap
 
 Planned ideas include:
 
-- Military aircraft detection
+- military aircraft detection
 - New Tracks mode
-- Better aircraft cards with registration/operator/airport codes
-- More receiver and aircraft statistics
-- Records and historical data
-- Alerts
-- Track history
-
-These are ideas, not promises of a particular release.
+- richer aircraft cards
+- airport codes
+- more receiver/aircraft statistics
+- historical records
+- alerts
+- track history
