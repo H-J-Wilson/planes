@@ -820,18 +820,23 @@ def read_statistics():
             for label, value, description in items
         )
 
+    receiver_rows = "".join(
+        f'<div><dt>{clean(label)}</dt><dd>{clean(value)}</dd></div>'
+        for label, value, _description in receiver_cards
+    )
+
     content = f'''<section class="stats-section">
       <div class="section-heading"><div><p class="eyebrow">RIGHT NOW</p><h2>Live snapshot</h2></div><span class="section-note">{clean(feed_status)}</span></div>
-      <div class="stats-grid">{cards_html(live_cards)}</div>
+      <div class="stats-grid live-stats">{cards_html(live_cards)}</div>
     </section>
-    <section class="stats-section">
-      <div class="section-heading"><div><p class="eyebrow">PLANES SESSION</p><h2>Since Planes started</h2></div><span class="section-note">{clean(dt.datetime.fromtimestamp(PLANES_SESSION_STARTED).strftime("%H:%M:%S"))}</span></div>
-      <div class="stats-grid">{cards_html(period_cards)}</div>
-    </section>
-    <section class="stats-section">
-      <div class="section-heading"><div><p class="eyebrow">RECEIVER PERIOD</p><h2>Since readsb started</h2></div><span class="section-note">From readsb stats.json</span></div>
-      <div class="stats-grid">{cards_html(receiver_cards)}</div>
-    </section>
+    <details class="stats-section stats-collapsible" open>
+      <summary><span><p class="eyebrow">PLANES SESSION</p><h2>Since Planes started</h2></span><span class="section-note">{clean(dt.datetime.fromtimestamp(PLANES_SESSION_STARTED).strftime("%H:%M:%S"))}</span></summary>
+      <div class="stats-grid session-stats">{cards_html(period_cards)}</div>
+    </details>
+    <details class="stats-section stats-collapsible">
+      <summary><span><p class="eyebrow">RECEIVER PERIOD</p><h2>Since readsb started</h2></span><span class="section-note">readsb stats.json</span></summary>
+      <div class="period-list"><dl class="details-list">{receiver_rows}</dl></div>
+    </details>
     <section class="stats-columns">
       <section class="panel"><h2>Aircraft types right now</h2><table><caption>Aircraft types currently visible</caption><thead><tr><th scope="col">Type</th><th scope="col">Count</th></tr></thead><tbody>{type_rows}</tbody></table></section>
       <section class="panel"><h2>Receiver connection</h2><dl class="details-list"><div><dt>Aircraft feed</dt><dd>{clean(settings.get("aircraft_data_url"))}</dd></div><div><dt>Refresh interval</dt><dd>{settings["refresh_seconds"]} seconds</dd></div><div><dt>ASBDB lookups</dt><dd>{"Enabled" if settings.get("asbdb_enabled") else "Disabled"}</dd></div><div><dt>Feed status</dt><dd>{clean(feed_status)}</dd></div><div><dt>Feed response</dt><dd>{round(elapsed*1000) if elapsed is not None else "—"} ms</dd></div></dl></section>
