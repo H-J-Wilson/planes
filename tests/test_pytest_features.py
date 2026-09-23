@@ -108,6 +108,29 @@ def test_metadata_404_is_cached(monkeypatch):
     assert request.call_count == 1
 
 
+def test_metadata_falls_back_to_hexdb(monkeypatch):
+    adsbdb_response = Mock(status_code=404)
+    hexdb_response = Mock(status_code=200)
+    hexdb_response.raise_for_status.return_value = None
+    hexdb_response.json.return_value = {
+        "ICAOTypeCode": "B738",
+        "Manufacturer": "Boeing",
+        "ModeS": "4CAD7D",
+        "Registration": "G-TEST",
+        "Type": "737-8K5",
+        "RegisteredOwners": "Test Airline",
+        "OperatorFlagCode": "TST",
+    }
+    request = Mock(side_effect=[adsbdb_response, hexdb_response])
+    monkeypatch.setattr(webpage.requests, "get", request)
+    result = webpage.aircraft_metadata_lookup("4cad7d")
+    assert result["metadata_source"] == "HexDB"
+    assert result["aircraft"]["type"] == "737-8K5"
+    assert result["aircraft"]["icao_type"] == "B738"
+    assert result["aircraft"]["registration"] == "G-TEST"
+    assert request.call_count == 2
+
+
 def test_metadata_endpoint_uses_current_callsign(monkeypatch):
     monkeypatch.setattr(webpage, "get_aircraft_data", lambda: ({"aircraft": [{"hex": "4cad7d", "flight": "TEST123"}]}, 0.01))
     lookup = Mock(return_value={
