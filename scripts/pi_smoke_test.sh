@@ -32,7 +32,9 @@ check_command() {
 }
 
 http_code() {
-  curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$1" 2>/dev/null || printf '000'
+  local code
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$1" 2>/dev/null)" || return 1
+  printf '%s' "$code"
 }
 
 echo
@@ -133,27 +135,39 @@ fi
 rm -f "$FEED_TMP"
 
 # Planes HTTP server
-ROOT_CODE="$(http_code "$PLANES_URL/")"
-if [ "$ROOT_CODE" = "200" ]; then
-  pass "Planes dashboard returns HTTP 200"
+if ROOT_CODE="$(http_code "$PLANES_URL/")"; then
+  if [ "$ROOT_CODE" = "200" ]; then
+    pass "Planes dashboard returns HTTP 200"
+  else
+    fail "Planes dashboard returned HTTP $ROOT_CODE"
+  fi
 else
-  fail "Planes dashboard returned HTTP $ROOT_CODE"
+  fail "Planes is not reachable at $PLANES_URL (is python main.py running?)"
+  echo "INFO  Start Planes with: python main.py"
+  PLANES_RUNNING=false
 fi
 
+PLANES_RUNNING=${PLANES_RUNNING:-true}
+
 # Main HTML pages
-for path in /statistics /settings /documentation /about /contact; do
-  code="$(http_code "$PLANES_URL$path")"
-  if [ "$code" = "200" ]; then
-    pass "$path returns HTTP 200"
-  else
-    fail "$path returned HTTP $code"
-  fi
-done
+if [ "$PLANES_RUNNING" = true ]; then
+  for path in /statistics /settings /documentation /about /contact; do
+    if code="$(http_code "$PLANES_URL$path")"; then
+      if [ "$code" = "200" ]; then
+        pass "$path returns HTTP 200"
+      else
+        fail "$path returned HTTP $code"
+      fi
+    else
+      fail "$path could not be reached"
+    fi
+  done
+fi
 
 # Dashboard API
+if [ "$PLANES_RUNNING" = true ]; then
 DASH_TMP="$(mktemp)"
-DASH_CODE="$(curl -sS -o "$DASH_TMP" -w '%{http_code}' --max-time 5 "$PLANES_URL/api/dashboard-data" 2>/dev/null || printf '000')"
-
+if DASH_CODE="$(curl -sS -o "$DASH_TMP" -w '%{http_code}' --max-time 5 "$PLANES_URL/api/dashboard-data" 2>/dev/null)"; then
 if [ "$DASH_CODE" = "200" ]; then
   if python3 - "$DASH_TMP" <<'PY'
 import json
@@ -188,11 +202,16 @@ PY
 else
   fail "/api/dashboard-data returned HTTP $DASH_CODE"
 fi
+else
+  fail "/api/dashboard-data could not be reached"
+fi
 rm -f "$DASH_TMP"
+fi
 
 # Saved feed test
+if [ "$PLANES_RUNNING" = true ]; then
 TEST_TMP="$(mktemp)"
-TEST_CODE="$(curl -sS -o "$TEST_TMP" -w '%{http_code}' --max-time 5 "$PLANES_URL/api/test-feed" 2>/dev/null || printf '000')"
+if TEST_CODE="$(curl -sS -o "$TEST_TMP" -w '%{http_code}' --max-time 5 "$PLANES_URL/api/test-feed" 2>/dev/null)"; then
 if [ "$TEST_CODE" = "200" ]; then
   if python3 - "$TEST_TMP" <<'PY'
 import json
@@ -212,9 +231,14 @@ PY
 else
   fail "/api/test-feed returned HTTP $TEST_CODE"
 fi
+else
+  fail "/api/test-feed could not be reached"
+fi
 rm -f "$TEST_TMP"
+fi
 
 # Unsaved feed URL test
+if [ "$PLANES_RUNNING" = true ]; then
 ENCODED_FEED="$(python3 - "$FEED_URL" <<'PY'
 from urllib.parse import quote
 import sys
@@ -240,7 +264,11 @@ PY
 else
   fail "/api/test-feed-url returned HTTP $UNSAVED_CODE"
 fi
+else
+  fail "/api/test-feed-url could not be reached"
+fi
 rm -f "$UNSAVED_TMP"
+fi
 
 echo
 echo "=== Results ==="
