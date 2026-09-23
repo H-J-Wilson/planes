@@ -600,8 +600,8 @@ def dashboard_content() -> str:
             if (key === 'speed') return Number(b.gs ?? -1) - Number(a.gs ?? -1);
             if (key === 'altitude') return Number(b.alt_baro ?? -1) - Number(a.alt_baro ?? -1);
             if (key === 'type') {
-              const am = metadataCache.get(String(a.hex || '').toLowerCase()) || {};
-              const bm = metadataCache.get(String(b.hex || '').toLowerCase()) || {};
+              const am = metadataCache.get(String(a.hex || '').toLowerCase()) || {{}};
+              const bm = metadataCache.get(String(b.hex || '').toLowerCase()) || {{}};
               return String(a.t || a.desc || am.type || am.icao_type || '').localeCompare(String(b.t || b.desc || bm.type || bm.icao_type || ''));
             }
             if (key === 'distance') return Number(b.r_dst ?? -1) - Number(a.r_dst ?? -1);
@@ -611,7 +611,7 @@ def dashboard_content() -> str:
           tbody.innerHTML = list.length ? list.map(a => {{
             const safeAircraft = (a && typeof a === 'object') ? a : {{}};
             const flight = String(safeAircraft.flight || safeAircraft.callsign || safeAircraft.fn || (safeAircraft.hex ? 'ICAO ' + String(safeAircraft.hex).toUpperCase() : 'Unknown')).trim();
-            const meta = metadataCache.get(String(safeAircraft.hex || '').toLowerCase()) || {};
+            const meta = metadataCache.get(String(safeAircraft.hex || '').toLowerCase()) || {{}};
             const type = safeAircraft.t || safeAircraft.desc || meta.type || meta.icao_type || 'Looking up…';
             const hex = String(safeAircraft.hex || '').toLowerCase();
             const registration = String(safeAircraft.r || safeAircraft.registration || meta.registration || '').trim();
