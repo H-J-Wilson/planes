@@ -699,7 +699,7 @@ def get_dashboard_table(response: Response):
 @app.get("/statistics", response_class=HTMLResponse)
 def read_statistics():
     data, elapsed = get_aircraft_data()
-    aircraft = data.get("aircraft", [])
+    aircraft = [a for a in data.get("aircraft", []) if isinstance(a, dict)]
     altitudes = [a.get("alt_baro") for a in aircraft if isinstance(a.get("alt_baro"), (int, float))]
     speeds = [a.get("gs") for a in aircraft if isinstance(a.get("gs"), (int, float))]
     positions = [a for a in aircraft if isinstance(a.get("lat"), (int, float)) and isinstance(a.get("lon"), (int, float))]
@@ -709,29 +709,84 @@ def read_statistics():
 
     types: dict[str, int] = {}
     for a in aircraft:
-        key = str(a.get("t") or a.get("desc") or "Unknown").strip() or "Unknown"
+        key = str(a.get("t") or a.get("desc") or "Type unavailable").strip() or "Type unavailable"
         types[key] = types.get(key, 0) + 1
-    top_types = sorted(types.items(), key=lambda x: x[1], reverse=True)[:8]
-    type_rows = "".join(f"<tr><td>{clean(k)}</td><td>{v}</td></tr>" for k,v in top_types) or '<tr><td colspan="2">No type data available.</td></tr>'
+    top_types = sorted(types.items(), key=lambda x: x[1], reverse=True)[:10]
+    type_rows = "".join(f"<tr><td>{clean(k)}</td><td>{v}</td></tr>" for k,v in top_types) or '<tr><td colspan="2">No aircraft type data available.</td></tr>'
+
+    readsb = get_readsb_stats()
+    total = readsb.get("total", {}) if isinstance(readsb, dict) else {}
+    local = total.get("local", {}) if isinstance(total, dict) else {}
+    cpr = total.get("cpr", {}) if isinstance(total, dict) else {}
+    tracks = total.get("tracks", {}) if isinstance(total, dict) else {}
+    readsb_start = total.get("start") if isinstance(total, dict) else None
+    readsb_end = total.get("end") if isinstance(total, dict) else None
+    readsb_runtime = (readsb_end - readsb_start) if isinstance(readsb_start, (int, float)) and isinstance(readsb_end, (int, float)) else None
 
     settings = load_settings()
     feed_status = "Live" if elapsed is not None else ("Stale — last good data" if LAST_GOOD_AVAILABLE else "Unavailable")
-    stats_cards = f'''
-      <article class="panel"><span>Aircraft visible</span><strong>{len(aircraft)}</strong><p>Current entries in the receiver feed.</p></article>
-      <article class="panel"><span>With position</span><strong>{len(positions)}</strong><p>Aircraft with numeric latitude and longitude.</p></article>
-      <article class="panel"><span>Moving</span><strong>{len(moving)}</strong><p>Ground speed above 1 kt.</p></article>
-      <article class="panel"><span>Climbing</span><strong>{len(climbing)}</strong><p>Vertical rate above 100 ft/min.</p></article>
-      <article class="panel"><span>Descending</span><strong>{len(descending)}</strong><p>Vertical rate below −100 ft/min.</p></article>
-      <article class="panel"><span>Average altitude</span><strong>{round(sum(altitudes)/len(altitudes)) if altitudes else "—"} <small>ft</small></strong><p>Barometric altitude where available.</p></article>
-      <article class="panel"><span>Average speed</span><strong>{round(sum(speeds)/len(speeds)) if speeds else "—"} <small>kt</small></strong><p>Ground speed where available.</p></article>
-      <article class="panel"><span>Highest altitude</span><strong>{max(altitudes) if altitudes else "—"} <small>ft</small></strong><p>Highest numeric barometric altitude.</p></article>
-      <article class="panel"><span>Fastest speed</span><strong>{max(speeds) if speeds else "—"} <small>kt</small></strong><p>Highest numeric ground speed.</p></article>
-      <article class="panel"><span>Feed status</span><strong>{clean(feed_status)}</strong><p>Current receiver data state.</p></article>
-      <article class="panel"><span>Feed response</span><strong>{round(elapsed*1000) if elapsed is not None else "—"} <small>ms</small></strong><p>Approximate request time.</p></article>
-    '''
-    content = f'''<section class="stats-grid">{stats_cards}</section>
-    <section class="panel table-card"><h2>Aircraft types</h2><table><caption>Aircraft types currently visible</caption><thead><tr><th scope="col">Type</th><th scope="col">Count</th></tr></thead><tbody>{type_rows}</tbody></table></section>
-    <section class="panel"><h2>Receiver connection</h2><dl class="details-list"><div><dt>Aircraft feed</dt><dd>{clean(settings.get("aircraft_data_url"))}</dd></div><div><dt>Refresh interval</dt><dd>{settings["refresh_seconds"]} seconds</dd></div><div><dt>ASBDB lookups</dt><dd>{"Enabled" if settings.get("asbdb_enabled") else "Disabled"}</dd></div></dl></section>'''
+    average_aircraft = PLANES_SESSION_AIRCRAFT_TOTAL / PLANES_SESSION_SAMPLES if PLANES_SESSION_SAMPLES else 0
+    session_runtime = time.time() - PLANES_SESSION_STARTED
+
+    live_cards = [
+        ("Aircraft visible", format_number(len(aircraft)), "Current entries in the live feed."),
+        ("With position", format_number(len(positions)), "Aircraft with numeric latitude and longitude."),
+        ("Moving", format_number(len(moving)), "Ground speed above 1 kt."),
+        ("Climbing", format_number(len(climbing)), "Vertical rate above 100 ft/min."),
+        ("Descending", format_number(len(descending)), "Vertical rate below −100 ft/min."),
+        ("Average altitude", f"{format_number(sum(altitudes)/len(altitudes))} ft" if altitudes else "—", "Current numeric barometric altitude average."),
+        ("Average speed", f"{format_number(sum(speeds)/len(speeds))} kt" if speeds else "—", "Current numeric ground speed average."),
+        ("Highest altitude", f"{format_number(max(altitudes))} ft" if altitudes else "—", "Highest altitude in the current snapshot."),
+        ("Fastest speed", f"{format_number(max(speeds))} kt" if speeds else "—", "Fastest ground speed in the current snapshot."),
+    ]
+    period_cards = [
+        ("Planes running", format_duration(session_runtime), "Since this Planes process started."),
+        ("Unique aircraft seen", format_number(len(PLANES_SESSION_UNIQUE_HEX)), "Distinct aircraft identifiers seen this session."),
+        ("Peak aircraft", format_number(PLANES_SESSION_PEAK_AIRCRAFT), "Most aircraft in one successful snapshot."),
+        ("Average aircraft", format_number(round(average_aircraft, 1)), "Average aircraft count across recorded snapshots."),
+        ("Highest altitude", f"{format_number(PLANES_SESSION_HIGHEST_ALTITUDE)} ft" if PLANES_SESSION_HIGHEST_ALTITUDE is not None else "—", "Highest numeric altitude seen this session."),
+        ("Fastest speed", f"{format_number(PLANES_SESSION_FASTEST_SPEED)} kt" if PLANES_SESSION_FASTEST_SPEED is not None else "—", "Fastest numeric ground speed seen this session."),
+        ("Snapshots recorded", format_number(PLANES_SESSION_SAMPLES), "Distinct feed timestamps recorded by Planes."),
+        ("Feed interruptions", format_number(PLANES_SESSION_FEED_INTERRUPTS), "Times a live feed recovered after an interruption."),
+    ]
+
+    receiver_cards = []
+    if readsb:
+        receiver_cards.extend([
+            ("readsb running", format_duration(readsb_runtime), "Total period reported by readsb."),
+            ("Messages accepted", format_number(total.get("messages")), "Messages accepted across the readsb total period."),
+            ("Tracks created", format_number(tracks.get("all")), "Aircraft tracks created during the readsb period."),
+            ("Global positions", format_number(cpr.get("global_ok")), "Successfully decoded global CPR positions."),
+            ("Blocks processed", format_number(local.get("blocks_processed")), "Local SDR sample blocks processed."),
+            ("Blocks dropped", format_number(local.get("blocks_dropped")), "Local SDR sample blocks dropped before processing."),
+            ("Mean signal", f"{format_number(local.get('signal'))} dBFS" if local.get("signal") is not None else "—", "Mean signal power for successful messages."),
+            ("Readsb period start", dt.datetime.fromtimestamp(readsb_start).strftime("%Y-%m-%d %H:%M") if isinstance(readsb_start, (int, float)) else "—", "Start time of the readsb total period."),
+        ])
+    else:
+        receiver_cards.append(("readsb stats", "Unavailable", "stats.json could not be read from the configured feed host."))
+
+    def cards_html(items: list[tuple[str, str, str]]) -> str:
+        return "".join(
+            f'<article class="panel stat-card"><span>{clean(label)}</span><strong>{clean(value)}</strong><p>{clean(description)}</p></article>'
+            for label, value, description in items
+        )
+
+    content = f'''<section class="stats-section">
+      <div class="section-heading"><div><p class="eyebrow">RIGHT NOW</p><h2>Live snapshot</h2></div><span class="section-note">{clean(feed_status)}</span></div>
+      <div class="stats-grid">{cards_html(live_cards)}</div>
+    </section>
+    <section class="stats-section">
+      <div class="section-heading"><div><p class="eyebrow">PLANES SESSION</p><h2>Since Planes started</h2></div><span class="section-note">{clean(dt.datetime.fromtimestamp(PLANES_SESSION_STARTED).strftime("%H:%M:%S"))}</span></div>
+      <div class="stats-grid">{cards_html(period_cards)}</div>
+    </section>
+    <section class="stats-section">
+      <div class="section-heading"><div><p class="eyebrow">RECEIVER PERIOD</p><h2>Since readsb started</h2></div><span class="section-note">From readsb stats.json</span></div>
+      <div class="stats-grid">{cards_html(receiver_cards)}</div>
+    </section>
+    <section class="stats-columns">
+      <section class="panel"><h2>Aircraft types right now</h2><table><caption>Aircraft types currently visible</caption><thead><tr><th scope="col">Type</th><th scope="col">Count</th></tr></thead><tbody>{type_rows}</tbody></table></section>
+      <section class="panel"><h2>Receiver connection</h2><dl class="details-list"><div><dt>Aircraft feed</dt><dd>{clean(settings.get("aircraft_data_url"))}</dd></div><div><dt>Refresh interval</dt><dd>{settings["refresh_seconds"]} seconds</dd></div><div><dt>ASBDB lookups</dt><dd>{"Enabled" if settings.get("asbdb_enabled") else "Disabled"}</dd></div><div><dt>Feed status</dt><dd>{clean(feed_status)}</dd></div><div><dt>Feed response</dt><dd>{round(elapsed*1000) if elapsed is not None else "—"} ms</dd></div></dl></section>
+    </section>'''
     return page("Statistics", content, "statistics")
 
 _asbdb_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
