@@ -286,16 +286,18 @@ def aircraft_metadata_lookup(hex_code: str, callsign: str = "") -> dict[str, Any
     if not re.fullmatch(r"[0-9a-f]{6}", hex_code):
         return None
     now = time.time()
-    cached = _aircraft_metadata_cache.get(hex_code)
+    clean_callsign = callsign.strip().upper()
+    cache_key = hex_code + "|" + clean_callsign
+    cached = _aircraft_metadata_cache.get(cache_key)
     if cached and now - cached[0] < 86400:
         return cached[1]
     url = AIRCRAFT_LOOKUP_BASE + quote(hex_code, safe="")
-    if callsign:
-        url += "?callsign=" + quote(callsign.strip().upper(), safe="")
+    if clean_callsign:
+        url += "?callsign=" + quote(clean_callsign, safe="")
     try:
         response = requests.get(url, timeout=3)
         if response.status_code == 404:
-            _aircraft_metadata_cache[hex_code] = (now, None)
+            _aircraft_metadata_cache[cache_key] = (now, None)
             return None
         response.raise_for_status()
         payload = response.json()
@@ -307,7 +309,7 @@ def aircraft_metadata_lookup(hex_code: str, callsign: str = "") -> dict[str, Any
             result["aircraft"] = aircraft
         if isinstance(route, dict):
             result["flightroute"] = route
-        _aircraft_metadata_cache[hex_code] = (now, result or None)
+        _aircraft_metadata_cache[cache_key] = (now, result or None)
         return result or None
     except (requests.RequestException, ValueError, TypeError, AttributeError) as exc:
         logger.info("Aircraft metadata lookup failed for %s: %s", hex_code, exc)
