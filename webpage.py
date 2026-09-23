@@ -742,7 +742,7 @@ def dashboard_content() -> str:
             const hasMetadata = metadataCache.has(String(safeAircraft.hex || '').toLowerCase());
             const type = safeAircraft.t || safeAircraft.desc || live.type || identity.type || identity.icao_type || (hasMetadata ? 'Unknown' : 'Looking up…');
             const hex = String(safeAircraft.hex || '').toLowerCase();
-            const registration = String(safeAircraft.r || safeAircraft.registration || identity.registration || '').trim();
+            const registration = String(safeAircraft.r || safeAircraft.registration || live.registration || identity.registration || '').trim();
             const manufacturer = String(identity.manufacturer || '').trim();
             const typeExtra = manufacturer ? '<small class="unit">'+esc(manufacturer)+'</small>' : '';
             const favOn = favs.has(hex);
@@ -758,23 +758,33 @@ def dashboard_content() -> str:
         async function enrichVisibleAircraft() {{
           const candidates = aircraftData
             .filter(a => a && typeof a === 'object')
-             .filter(a => /^~?[0-9a-f]{{6}}$/i.test(String(a.hex || '')))
+            .filter(a => /^~?[0-9a-f]{{6}}$/i.test(String(a.hex || '')))
             .filter(a => !a.t && !a.desc && !metadataCache.has(String(a.hex).toLowerCase()) && !metadataRequested.has(String(a.hex).toLowerCase()))
-            .slice(0, 20);
+            .slice(0, 24);
           if (!candidates.length) return;
+
           candidates.forEach(a => metadataRequested.add(String(a.hex).toLowerCase()));
-          for (const aircraft of candidates) {{
-            const hex = String(aircraft.hex).toLowerCase();
-            try {{
-              const response = await fetch('/api/aircraft-metadata/' + encodeURIComponent(hex), {{cache:'no-store'}});
-              if (!response.ok) continue;
-              const payload = await response.json();
-              if (payload) metadataCache.set(hex, payload);
-            }} catch (error) {{
-              // Metadata is supplementary; keep live readsb data working when lookup fails.
+          const queue = [...candidates];
+          const workers = Math.min(6, queue.length);
+
+          async function worker() {{
+            while (queue.length) {{
+              const aircraft = queue.shift();
+              if (!aircraft) return;
+              const hex = String(aircraft.hex).toLowerCase();
+              try {{
+                const response = await fetch('/api/aircraft-metadata/' + encodeURIComponent(hex), {{cache:'no-store'}});
+                if (!response.ok) continue;
+                const payload = await response.json();
+                if (payload) metadataCache.set(hex, payload);
+              }} catch (error) {{
+                // Metadata is supplementary; keep live readsb data working when lookup fails.
+              }}
+              renderRows();
             }}
-            renderRows();
           }}
+
+          await Promise.all(Array.from({{length: workers}}, () => worker()));
         }}
 
         async function refresh() {{
