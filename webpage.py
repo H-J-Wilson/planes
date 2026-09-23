@@ -385,7 +385,17 @@ def aircraft_rows(aircraft: list[dict[str, Any]]) -> str:
         hex_code = str(plane.get("hex", "")).strip().lower()
         valid_id = valid_aircraft_identifier(hex_code)
         flight = str(plane.get("flight") or plane.get("callsign") or plane.get("fn") or "").strip() or (f"ICAO {hex_code.replace('~','').upper()}" if valid_id else "Unknown")
-        aircraft_type = str(plane.get("t") or plane.get("desc") or "").strip() or "Type unavailable"
+        raw_type = str(plane.get("type") or "").strip()
+        source_type = raw_type.lower()
+        message_source = (
+            source_type.startswith("adsb_")
+            or source_type.startswith("tisb_")
+            or source_type in {"mlat", "mode_s", "other"}
+        )
+        aircraft_type = str(plane.get("t") or plane.get("desc") or "").strip()
+        if not aircraft_type and raw_type and not message_source:
+            aircraft_type = raw_type
+        aircraft_type = aircraft_type or "Type unavailable"
         registration = str(plane.get("r") or plane.get("registration") or "").strip()
         speed = plane.get("gs", "—")
         altitude = plane.get("alt_baro", "—")
