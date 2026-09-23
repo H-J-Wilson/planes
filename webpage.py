@@ -316,6 +316,17 @@ def aircraft_metadata_lookup(hex_code: str, callsign: str = "") -> dict[str, Any
         return None
 
 
+def metadata_for_aircraft(hex_code: str, callsign: str = "") -> dict[str, Any]:
+    result = aircraft_metadata_lookup(hex_code, callsign) or {}
+    aircraft = result.get("aircraft") if isinstance(result.get("aircraft"), dict) else {}
+    route = result.get("flightroute") if isinstance(result.get("flightroute"), dict) else {}
+    return {
+        "ok": bool(result),
+        "aircraft": aircraft,
+        "flightroute": route,
+    }
+
+
 def save_settings(settings: dict[str, Any]) -> None:
     SETTINGS_FILE.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 
@@ -531,6 +542,8 @@ def dashboard_content() -> str:
         const REFRESH_SECONDS = {refresh};
         let aircraftData = {initial_json};
         let refreshInFlight = false;
+        const metadataCache = new Map();
+        const metadataRequested = new Set();
 
         function esc(value) {{
           return String(value ?? '').replace(/[&<>'"]/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}}[ch]));
@@ -564,7 +577,8 @@ def dashboard_content() -> str:
 
           const list = [...aircraftData].filter(a => {{
             if (!a || typeof a !== 'object') return false;
-            const text = [a.flight || a.callsign || a.fn || '', a.t || '', a.desc || '', a.hex || '', a.r || a.registration || '', a.manufacturer || '', a.type || ''].join(' ').toLowerCase();
+            const meta = metadataCache.get(String(a.hex || '').toLowerCase()) || {};
+            const text = [a.flight || a.callsign || a.fn || '', a.t || '', a.desc || '', a.hex || '', a.r || a.registration || '', a.manufacturer || '', a.type || '', meta.type || '', meta.icao_type || '', meta.manufacturer || '', meta.registration || ''].join(' ').toLowerCase();
             const vr = Number(a.baro_rate ?? a.geom_rate);
             const gs = Number(a.gs);
             const alt = Number(a.alt_baro);
@@ -585,7 +599,11 @@ def dashboard_content() -> str:
           list.sort((a,b) => {{
             if (key === 'speed') return Number(b.gs ?? -1) - Number(a.gs ?? -1);
             if (key === 'altitude') return Number(b.alt_baro ?? -1) - Number(a.alt_baro ?? -1);
-            if (key === 'type') return String(a.t || a.desc || '').localeCompare(String(b.t || b.desc || ''));
+            if (key === 'type') {
+              const am = metadataCache.get(String(a.hex || '').toLowerCase()) || {};
+              const bm = metadataCache.get(String(b.hex || '').toLowerCase()) || {};
+              return String(a.t || a.desc || am.type || am.icao_type || '').localeCompare(String(b.t || b.desc || bm.type || bm.icao_type || ''));
+            }
             if (key === 'distance') return Number(b.r_dst ?? -1) - Number(a.r_dst ?? -1);
             return String(a.flight || a.callsign || a.fn || '').localeCompare(String(b.flight || b.callsign || b.fn || ''));
           }});
@@ -593,17 +611,42 @@ def dashboard_content() -> str:
           tbody.innerHTML = list.length ? list.map(a => {{
             const safeAircraft = (a && typeof a === 'object') ? a : {{}};
             const flight = String(safeAircraft.flight || safeAircraft.callsign || safeAircraft.fn || (safeAircraft.hex ? 'ICAO ' + String(safeAircraft.hex).toUpperCase() : 'Unknown')).trim();
-            const type = safeAircraft.t || safeAircraft.desc || 'Type unavailable';
+            const meta = metadataCache.get(String(safeAircraft.hex || '').toLowerCase()) || {};
+            const type = safeAircraft.t || safeAircraft.desc || meta.type || meta.icao_type || 'Looking up…';
             const hex = String(safeAircraft.hex || '').toLowerCase();
-            const registration = String(safeAircraft.r || safeAircraft.registration || '').trim();
+            const registration = String(safeAircraft.r || safeAircraft.registration || meta.registration || '').trim();
+            const manufacturer = String(meta.manufacturer || '').trim();
+            const typeExtra = manufacturer ? '<small class="unit">'+esc(manufacturer)+'</small>' : '';
             const favOn = favs.has(hex);
             const validHex = /^[0-9a-f]{{6}}$/i.test(hex);
             const details = validHex ? '/aircraft/' + encodeURIComponent(hex) : '#';
             const registrationHtml = registration ? '<small class="unit">'+esc(registration)+'</small>' : '';
             const favouriteHtml = validHex ? '<button type="button" class="favourite-button" data-favourite="'+esc(hex)+'" aria-label="'+(favOn ? 'Remove ' : 'Add ')+'favourite" aria-pressed="'+favOn+'">'+(favOn ? '★' : '☆')+'</button>' : '';
             const detailsHtml = validHex ? '<a class="text-link" href="'+details+'">View details</a>' : '';
-            return '<tr data-aircraft-row><td><span class="mobile-label">Flight</span><strong>'+esc(flight)+'</strong>'+registrationHtml+'</td><td><span class="mobile-label">Aircraft</span>'+esc(type)+'</td><td><span class="mobile-label">Speed</span>'+esc(a.gs ?? '—')+' <span class="unit">kt</span></td><td><span class="mobile-label">Altitude</span>'+esc(a.alt_baro ?? '—')+' <span class="unit">ft</span></td><td class="actions">'+favouriteHtml+' '+detailsHtml+'</td></tr>';
+            return '<tr data-aircraft-row><td><span class="mobile-label">Flight</span><strong>'+esc(flight)+'</strong>'+registrationHtml+'</td><td><span class="mobile-label">Aircraft</span><strong>'+esc(type)+'</strong>'+typeExtra+'</td><td><span class="mobile-label">Speed</span>'+esc(a.gs ?? '—')+' <span class="unit">kt</span></td><td><span class="mobile-label">Altitude</span>'+esc(a.alt_baro ?? '—')+' <span class="unit">ft</span></td><td class="actions">'+favouriteHtml+' '+detailsHtml+'</td></tr>';
           }}).join('') : '<tr><td colspan="5" class="empty-cell">'+(aircraftData.length ? 'No aircraft match the current filters.' : 'No aircraft data is currently available.')+'</td></tr>';
+        }}
+
+        async function enrichVisibleAircraft() {{
+          const candidates = aircraftData
+            .filter(a => a && typeof a === 'object')
+            .filter(a => /^~?[0-9a-f]{6}$/i.test(String(a.hex || '')))
+            .filter(a => !a.t && !a.desc && !metadataCache.has(String(a.hex).toLowerCase()) && !metadataRequested.has(String(a.hex).toLowerCase()))
+            .slice(0, 16);
+          if (!candidates.length) return;
+          candidates.forEach(a => metadataRequested.add(String(a.hex).toLowerCase()));
+          for (const aircraft of candidates) {{
+            const hex = String(aircraft.hex).toLowerCase();
+            try {{
+              const response = await fetch('/api/aircraft-metadata/' + encodeURIComponent(hex), {{cache:'no-store'}});
+              if (!response.ok) continue;
+              const payload = await response.json();
+              if (payload && payload.aircraft) metadataCache.set(hex, payload.aircraft);
+            }} catch (error) {{
+              // Metadata is supplementary; keep live readsb data working when lookup fails.
+            }}
+            renderRows();
+          }}
         }}
 
         async function refresh() {{
@@ -628,6 +671,7 @@ def dashboard_content() -> str:
               dataAge.textContent = '—';
             }}
             renderRows();
+            enrichVisibleAircraft();
             tableStatus.textContent = feedOk ? 'Aircraft list updated.' : 'Feed unavailable; showing the last successful aircraft data.';
           }} catch (error) {{
             status.textContent = aircraftData.length ? 'Using last good data' : 'Feed unavailable';
@@ -666,6 +710,7 @@ def dashboard_content() -> str:
         }});
         refreshButton.addEventListener('click', refresh);
         renderRows();
+        enrichVisibleAircraft();
         refresh();
         setInterval(refresh, REFRESH_SECONDS * 1000);
       }})();
@@ -718,6 +763,7 @@ def read_statistics():
 
     readsb = get_readsb_stats()
     total = readsb.get("total", {}) if isinstance(readsb, dict) else {}
+    last15 = readsb.get("last15min", {}) if isinstance(readsb, dict) else {}
     local = total.get("local", {}) if isinstance(total, dict) else {}
     cpr = total.get("cpr", {}) if isinstance(total, dict) else {}
     tracks = total.get("tracks", {}) if isinstance(total, dict) else {}
@@ -762,6 +808,7 @@ def read_statistics():
             ("Blocks processed", format_number(local.get("blocks_processed")), "Local SDR sample blocks processed."),
             ("Blocks dropped", format_number(local.get("blocks_dropped")), "Local SDR sample blocks dropped before processing."),
             ("Mean signal", f"{format_number(local.get('signal'))} dBFS" if local.get("signal") is not None else "—", "Mean signal power for successful messages."),
+            ("15 min messages", format_number(last15.get("messages")), "Messages accepted during readsb's rolling 15-minute window."),
             ("Readsb period start", dt.datetime.fromtimestamp(readsb_start).strftime("%Y-%m-%d %H:%M") if isinstance(readsb_start, (int, float)) else "—", "Start time of the readsb total period."),
         ])
     else:
@@ -833,68 +880,111 @@ def detail_fragment(hex_code: str) -> str:
         return '<div class="notice error"><strong>Aircraft not currently visible.</strong><p>It may have left receiver range or stopped transmitting.</p></div>'
 
     flight = str(target.get("flight") or target.get("callsign") or target.get("fn") or "").strip()
-    metadata = aircraft_metadata_lookup(hex_code, flight) or {}
-    db_aircraft = metadata.get("aircraft") if isinstance(metadata.get("aircraft"), dict) else {}
-    route = metadata.get("flightroute") if isinstance(metadata.get("flightroute"), dict) else None
-    if not route and flight:
-        route = asbdb_lookup(flight)
+    metadata = metadata_for_aircraft(hex_code, flight)
+    db_aircraft = metadata.get("aircraft", {})
+    route = metadata.get("flightroute", {})
 
-    route_html = '<p class="muted">No scheduled route information available.</p>'
-    route_callsign = ""
-    route_iata = ""
-    if route:
-        route_callsign = str(route.get("callsign_icao") or route.get("callsign") or "").strip()
-        route_iata = str(route.get("callsign_iata") or "").strip()
-        origin_obj = route.get("origin") if isinstance(route.get("origin"), dict) else {}
-        destination_obj = route.get("destination") if isinstance(route.get("destination"), dict) else {}
-        airline_obj = route.get("airline") if isinstance(route.get("airline"), dict) else {}
-        origin_code = origin_obj.get("iata_code") or origin_obj.get("iata") or origin_obj.get("icao_code") or origin_obj.get("icao")
-        destination_code = destination_obj.get("iata_code") or destination_obj.get("iata") or destination_obj.get("icao_code") or destination_obj.get("icao")
-        origin_name = origin_obj.get("name") or "Unknown origin"
-        destination_name = destination_obj.get("name") or "Unknown destination"
-        airline_name = airline_obj.get("name") or "Unknown airline"
-        origin_label = f"{clean(origin_code)} · {clean(origin_name)}" if origin_code else clean(origin_name)
-        destination_label = f"{clean(destination_code)} · {clean(destination_name)}" if destination_code else clean(destination_name)
-        route_html = f'<div class="route"><div><span>Origin</span><strong>{origin_label}</strong></div><div class="route-arrow" aria-hidden="true">→</div><div><span>Destination</span><strong>{destination_label}</strong></div><p>{clean(airline_name)} · ASBDB scheduled-route data</p></div>'
-
-    display_flight = flight or route_callsign or (f"ICAO {hex_code.replace('~','').upper()}" if hex_code else "Unknown")
     registration = target.get("r") or target.get("registration") or db_aircraft.get("registration")
-    aircraft_type = target.get("t") or target.get("desc") or db_aircraft.get("type") or "Type unavailable"
+    aircraft_type = target.get("t") or target.get("desc") or db_aircraft.get("type")
     icao_type = db_aircraft.get("icao_type")
     manufacturer = db_aircraft.get("manufacturer")
     operator = db_aircraft.get("registered_owner_operator_flag_code") or db_aircraft.get("registered_owner")
     owner_country = db_aircraft.get("registered_owner_country_name")
-    vertical_rate = target.get("baro_rate")
 
-    fields = [
-        ("Flight number", flight or None),
-        ("ICAO callsign", route_callsign or None),
-        ("IATA callsign", route_iata or None),
-        ("Registration", registration),
-        ("Aircraft type", aircraft_type),
-        ("ICAO type", icao_type),
-        ("Manufacturer", manufacturer),
-        ("Operator / owner", operator),
-        ("Owner country", owner_country),
-        ("HEX / Mode-S", hex_code.upper()),
-        ("Squawk", target.get("squawk")),
-        ("Ground speed", f"{target.get('gs')} kt" if target.get("gs") is not None else None),
-        ("Altitude", f"{target.get('alt_baro')} ft" if target.get("alt_baro") is not None else None),
-        ("Vertical rate", f"{vertical_rate} ft/min" if vertical_rate is not None else None),
-        ("Heading", f"{target.get('track')}°" if target.get('track') is not None else None),
-        ("Latitude", target.get("lat")),
-        ("Longitude", target.get("lon")),
-        ("Distance", f"{target.get('r_dst')} nm" if target.get("r_dst") is not None else None),
-        ("Bearing", f"{target.get('r_dir')}°" if target.get("r_dir") is not None else None),
-        ("Signal", f"{target.get('rssi')} dBFS" if target.get("rssi") is not None else None),
-    ]
-    cards = "".join(
-        f'<div><span>{clean(label)}</span><strong>{clean(value)}</strong></div>'
-        for label, value in fields
-    )
-    return f'''<div class="detail-title"><div><p class="eyebrow">HEX {clean(hex_code.replace('~','').upper())}</p><h2>{clean(display_flight)}</h2></div><span class="live-pill">LIVE</span></div>
-    <section class="detail-section"><h3>Identity and aircraft</h3><div class="detail-grid">{cards}</div></section>
-    <section class="route-panel"><h3>Route information</h3>{route_html}</section>'''
+    route_callsign = str(route.get("callsign_icao") or "").strip()
+    route_iata = str(route.get("callsign_iata") or "").strip()
+    display_flight = flight or route_callsign or f"ICAO {hex_code.replace('~','').upper()}"
+
+    def field(label: str, value: Any) -> str:
+        return f'<div class="detail-card"><span>{clean(label)}</span><strong>{clean(value, "Not available")}</strong></div>'
+
+    identity = "".join([
+        field("Flight / callsign", flight or route_callsign),
+        field("ICAO callsign", route_callsign),
+        field("IATA callsign", route_iata),
+        field("Registration", registration),
+        field("Aircraft type", aircraft_type),
+        field("ICAO type", icao_type),
+        field("Manufacturer", manufacturer),
+        field("Operator / owner", operator),
+        field("Owner country", owner_country),
+        field("HEX / Mode-S", hex_code.upper()),
+        field("Message source", target.get("type")),
+    ])
+
+    flight_data = "".join([
+        field("Barometric altitude", f"{target.get('alt_baro')} ft" if target.get("alt_baro") is not None else None),
+        field("Geometric altitude", f"{target.get('alt_geom')} ft" if target.get("alt_geom") is not None else None),
+        field("Ground speed", f"{target.get('gs')} kt" if target.get("gs") is not None else None),
+        field("Indicated airspeed", f"{target.get('ias')} kt" if target.get("ias") is not None else None),
+        field("True airspeed", f"{target.get('tas')} kt" if target.get("tas") is not None else None),
+        field("Mach", target.get("mach")),
+        field("Track", f"{target.get('track')}°" if target.get("track") is not None else None),
+        field("Magnetic heading", f"{target.get('mag_heading')}°" if target.get("mag_heading") is not None else None),
+        field("True heading", f"{target.get('true_heading')}°" if target.get("true_heading") is not None else None),
+        field("Barometric rate", f"{target.get('baro_rate')} ft/min" if target.get("baro_rate") is not None else None),
+        field("Geometric rate", f"{target.get('geom_rate')} ft/min" if target.get("geom_rate") is not None else None),
+        field("Roll", f"{target.get('roll')}°" if target.get("roll") is not None else None),
+        field("Outside air temp", f"{target.get('oat')} °C" if target.get("oat") is not None else None),
+    ])
+
+    navigation = "".join([
+        field("Latitude", target.get("lat")),
+        field("Longitude", target.get("lon")),
+        field("Distance", f"{target.get('r_dst')} nm" if target.get('r_dst') is not None else None),
+        field("Bearing", f"{target.get('r_dir')}°" if target.get('r_dir') is not None else None),
+        field("Squawk", target.get("squawk")),
+        field("Emergency", target.get("emergency")),
+        field("Emitter category", target.get("category")),
+        field("Selected altitude", f"{target.get('nav_altitude_mcp')} ft" if target.get("nav_altitude_mcp") is not None else None),
+        field("QNH", f"{target.get('nav_qnh')} hPa" if target.get("nav_qnh") is not None else None),
+        field("NIC", target.get("nic")),
+        field("NAC-P", target.get("nac_p")),
+        field("NAC-V", target.get("nac_v")),
+        field("SIL", target.get("sil")),
+        field("GVA", target.get("gva")),
+        field("SDA", target.get("sda")),
+    ])
+
+    signal = "".join([
+        field("Messages from aircraft", target.get("messages")),
+        field("Last seen", f"{target.get('seen')} s ago" if target.get("seen") is not None else None),
+        field("Position last seen", f"{target.get('seen_pos')} s ago" if target.get("seen_pos") is not None else None),
+        field("RSSI", f"{target.get('rssi')} dBFS" if target.get("rssi") is not None else None),
+        field("Readsb data source", target.get("type")),
+        field("MLAT fields", ", ".join(target.get("mlat", [])) if isinstance(target.get("mlat"), list) and target.get("mlat") else None),
+        field("TIS-B fields", ", ".join(target.get("tisb", [])) if isinstance(target.get("tisb"), list) and target.get("tisb") else None),
+    ])
+
+    route_html = '<p class="muted">No scheduled route data was returned for this aircraft.</p>'
+    if isinstance(route, dict) and route:
+        origin = route.get("origin") if isinstance(route.get("origin"), dict) else {}
+        destination = route.get("destination") if isinstance(route.get("destination"), dict) else {}
+        airline = route.get("airline") if isinstance(route.get("airline"), dict) else {}
+        origin_code = origin.get("iata_code") or origin.get("icao_code")
+        destination_code = destination.get("iata_code") or destination.get("icao_code")
+        origin_label = f"{clean(origin_code)} · {clean(origin.get('name'))}" if origin_code else clean(origin.get("name"))
+        destination_label = f"{clean(destination_code)} · {clean(destination.get('name'))}" if destination_code else clean(destination.get("name"))
+        airline_label = clean(airline.get("name")) if airline.get("name") else "Unknown airline"
+        route_html = f'<div class="route"><div><span>Origin</span><strong>{origin_label}</strong></div><div class="route-arrow" aria-hidden="true">→</div><div><span>Destination</span><strong>{destination_label}</strong></div><p>{airline_label} · ASBDB scheduled route</p></div>'
+
+    photo_html = ""
+    photo_url = db_aircraft.get("url_photo_thumbnail") or db_aircraft.get("url_photo")
+    if isinstance(photo_url, str) and urlparse(photo_url).scheme in {"http", "https"}:
+        photo_html = f'<img class="aircraft-photo" src="{html.escape(photo_url, quote=True)}" alt="Aircraft photo from ADSBDB" loading="lazy">'
+
+    source_note = "Live telemetry: readsb"
+    if metadata.get("ok"):
+        source_note += " · identity: ADSBDB"
+
+    return f'''<div class="detail-title"><div><p class="eyebrow">AIRCRAFT DETAILS</p><h2>{clean(display_flight)}</h2><p class="detail-subtitle">HEX {clean(hex_code.replace("~","").upper())} · {clean(registration, "Registration unavailable")}</p></div><span class="live-pill">LIVE</span></div>
+    {photo_html}
+    <p class="detail-source-note">{source_note}</p>
+    <section class="detail-section"><div class="section-heading"><div><p class="eyebrow">IDENTITY</p><h3>Aircraft identity</h3></div></div><div class="detail-grid">{identity}</div></section>
+    <section class="detail-section"><div class="section-heading"><div><p class="eyebrow">FLIGHT DATA</p><h3>Live flight data</h3></div></div><div class="detail-grid">{flight_data}</div></section>
+    <section class="detail-section"><div class="section-heading"><div><p class="eyebrow">NAVIGATION</p><h3>Navigation and transponder</h3></div></div><div class="detail-grid">{navigation}</div></section>
+    <section class="detail-section"><div class="section-heading"><div><p class="eyebrow">SIGNAL</p><h3>Receiver / signal data</h3></div></div><div class="detail-grid">{signal}</div></section>
+    <section class="route-panel"><div class="section-heading"><div><p class="eyebrow">ROUTE</p><h3>Scheduled route</h3></div></div>{route_html}</section>'''
 
 @app.get("/aircraft/{hex_code}", response_class=HTMLResponse)
 def read_aircraft_details(hex_code: str):
@@ -922,6 +1012,19 @@ def read_aircraft_details(hex_code: str):
       setInterval(refreshAircraft, REFRESH_SECONDS * 1000);
     </script>'''
     return page("Aircraft Details", content)
+
+@app.get("/api/aircraft-metadata/{hex_code}")
+def get_aircraft_metadata(hex_code: str):
+    safe_hex = str(hex_code or "").strip().lower()
+    if not valid_aircraft_identifier(safe_hex):
+        return JSONResponse({"ok": False, "detail": "Invalid aircraft identifier."}, status_code=400)
+    data, _ = get_aircraft_data()
+    target = next((a for a in data.get("aircraft", []) if str(a.get("hex", "")).strip().lower() == safe_hex), None)
+    callsign = str(target.get("flight") or target.get("callsign") or target.get("fn") or "").strip() if isinstance(target, dict) else ""
+    result = metadata_for_aircraft(safe_hex, callsign)
+    response = {"ok": result["ok"], "aircraft": result["aircraft"], "flightroute": result["flightroute"]}
+    return JSONResponse(response, headers={"Cache-Control": "public, max-age=300"})
+
 
 @app.get("/api/aircraft/{hex_code}", response_class=HTMLResponse)
 def get_aircraft_details_fragment(hex_code: str, response: Response):
@@ -1166,6 +1269,7 @@ return data + request time</code></pre>
         <li><code>/api/dashboard-data</code> — Dashboard refresh JSON.</li>
         <li><code>/api/dashboard-table</code> — aircraft table HTML.</li>
         <li><code>/api/aircraft/&lt;hex&gt;</code> — live detail HTML fragment.</li>
+        <li><code>/api/aircraft-metadata/&lt;hex&gt;</code> — cached ADSBDB aircraft metadata.</li>
         <li><code>/api/settings</code> — settings read/write.</li>
         <li><code>/api/test-feed</code> — saved-feed test.</li>
         <li><code>/api/test-feed-url</code> — unsaved-feed test.</li>
