@@ -29,6 +29,7 @@ DEFAULT_SETTINGS = {
 ASBDB_BASE = "https://api.adsbdb.com/v0/callsign/"
 AIRCRAFT_LOOKUP_BASE = "https://api.adsbdb.com/v0/aircraft/"
 HEXDB_AIRCRAFT_BASE = "https://hexdb.io/api/v1/aircraft/"
+FR24_FEED_URL = "http://127.0.0.1:8754/flights.json"
 APP_VERSION = "0.0.5-test"
 FIRST_RUN_FILE = Path(".planes_setup_complete")
 
@@ -282,6 +283,68 @@ def get_readsb_stats() -> dict[str, Any] | None:
 
 _aircraft_metadata_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
+_fr24_live_cache: tuple[float, dict[str, dict[str, Any]]] = (0.0, {})
+
+
+def _normalise_live_hex(value: Any) -> str:
+    text = str(value or "").strip().lower().replace("0x", "")
+    return text if re.fullmatch(r"[0-9a-f]{6}", text) else ""
+
+
+def _walk_json_dicts(value: Any):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk_json_dicts(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_json_dicts(child)
+
+
+def get_fr24_live_identities() -> dict[str, dict[str, Any]]:
+    global _fr24_live_cache
+    now = time.time()
+    if now - _fr24_live_cache[0] < 5:
+        return _fr24_live_cache[1]
+
+    identities: dict[str, dict[str, Any]] = {}
+    try:
+        response = requests.get(FR24_FEED_URL, timeout=2)
+        response.raise_for_status()
+        payload = response.json()
+        for item in _walk_json_dicts(payload):
+            hex_code = ""
+            for key in ("hex", "mode_s", "modeS", "icao_addr", "icao24", "mode_s_code"):
+                hex_code = _normalise_live_hex(item.get(key)) if key in item else ""
+                if hex_code:
+                    break
+            if not hex_code:
+                continue
+
+            callsign = str(item.get("callsign") or item.get("flight") or item.get("flight_number") or "").strip().upper()
+            registration = str(item.get("registration") or item.get("reg_num") or item.get("reg") or "").strip()
+            aircraft_type = str(item.get("type") or item.get("model") or item.get("aircraft_type") or "").strip()
+            if not any((callsign, registration, aircraft_type)):
+                continue
+
+            identity = identities.setdefault(hex_code, {})
+            if callsign:
+                identity["callsign"] = callsign
+            if registration:
+                identity["registration"] = registration
+            if aircraft_type:
+                identity["type"] = aircraft_type
+    except (requests.RequestException, ValueError, TypeError, AttributeError) as exc:
+        logger.info("FR24 live feed lookup failed: %s", exc)
+
+    _fr24_live_cache = (now, identities)
+    return identities
+
+
+def fr24_live_identity(hex_code: str) -> dict[str, Any]:
+    safe_hex = str(hex_code or "").strip().lower().replace("0x", "")
+    return dict(get_fr24_live_identities().get(safe_hex, {}))
+
 
 def _hexdb_aircraft_lookup(hex_code: str) -> dict[str, Any] | None:
     url = HEXDB_AIRCRAFT_BASE + quote(hex_code, safe="")
@@ -353,13 +416,17 @@ def aircraft_metadata_lookup(hex_code: str, callsign: str = "") -> dict[str, Any
 
 
 def metadata_for_aircraft(hex_code: str, callsign: str = "") -> dict[str, Any]:
-    result = aircraft_metadata_lookup(hex_code, callsign) or {}
+    live_identity = fr24_live_identity(hex_code)
+    effective_callsign = str(callsign or live_identity.get("callsign") or "").strip()
+    result = aircraft_metadata_lookup(hex_code, effective_callsign) or {}
     aircraft = result.get("aircraft") if isinstance(result.get("aircraft"), dict) else {}
     route = result.get("flightroute") if isinstance(result.get("flightroute"), dict) else {}
     return {
-        "ok": bool(result),
+        "ok": bool(result or live_identity),
         "aircraft": aircraft,
         "flightroute": route,
+        "live_identity": live_identity,
+        "metadata_source": result.get("metadata_source", ""),
     }
 
 
@@ -625,9 +692,11 @@ def dashboard_content() -> str:
             if (!a || typeof a !== 'object') return false;
             const metadata = metadataCache.get(String(a.hex || '').toLowerCase()) || {{}};
             const identity = metadata.aircraft || {{}};
+            const live = metadata.live_identity || {{}};
             const route = metadata.flightroute || {{}};
             const routeCallsign = route.callsign_icao || route.callsign_iata || '';
-            const text = [a.flight || a.callsign || a.fn || routeCallsign, a.t || '', a.desc || '', a.hex || '', a.r || a.registration || '', a.manufacturer || '', a.type || '', identity.type || '', identity.icao_type || '', identity.manufacturer || '', identity.registration || '', routeCallsign].join(' ').toLowerCase();
+            const liveCallsign = live.callsign || '';
+            const text = [a.flight || a.callsign || a.fn || liveCallsign || routeCallsign, a.t || '', a.desc || '', a.hex || '', a.r || a.registration || '', a.manufacturer || '', a.type || '', live.type || '', live.registration || '', identity.type || '', identity.icao_type || '', identity.manufacturer || '', identity.registration || '', routeCallsign].join(' ').toLowerCase();
             const vr = Number(a.baro_rate ?? a.geom_rate);
             const gs = Number(a.gs);
             const alt = Number(a.alt_baro);
@@ -653,7 +722,9 @@ def dashboard_content() -> str:
               const bmeta = metadataCache.get(String(b.hex || '').toLowerCase()) || {{}};
               const aidentity = ameta.aircraft || {{}};
               const bidentity = bmeta.aircraft || {{}};
-              return String(a.t || a.desc || aidentity.type || aidentity.icao_type || '').localeCompare(String(b.t || b.desc || bidentity.type || bidentity.icao_type || ''));
+              const alive = ameta.live_identity || {{}};
+              const blive = bmeta.live_identity || {{}};
+              return String(a.t || a.desc || alive.type || aidentity.type || aidentity.icao_type || '').localeCompare(String(b.t || b.desc || blive.type || bidentity.type || bidentity.icao_type || ''));
             }}
             if (key === 'distance') return Number(b.r_dst ?? -1) - Number(a.r_dst ?? -1);
             return String(a.flight || a.callsign || a.fn || '').localeCompare(String(b.flight || b.callsign || b.fn || ''));
@@ -663,11 +734,13 @@ def dashboard_content() -> str:
             const safeAircraft = (a && typeof a === 'object') ? a : {{}};
             const metadata = metadataCache.get(String(safeAircraft.hex || '').toLowerCase()) || {{}};
             const identity = metadata.aircraft || {{}};
+            const live = metadata.live_identity || {{}};
             const route = metadata.flightroute || {{}};
             const routeCallsign = String(route.callsign_icao || route.callsign_iata || '').trim();
-            const flight = String(safeAircraft.flight || safeAircraft.callsign || safeAircraft.fn || routeCallsign || (safeAircraft.hex ? 'ICAO ' + String(safeAircraft.hex).toUpperCase() : 'Unknown')).trim();
+            const liveCallsign = String(live.callsign || '').trim();
+            const flight = String(safeAircraft.flight || safeAircraft.callsign || safeAircraft.fn || liveCallsign || routeCallsign || (safeAircraft.hex ? 'ICAO ' + String(safeAircraft.hex).toUpperCase() : 'Unknown')).trim();
             const hasMetadata = metadataCache.has(String(safeAircraft.hex || '').toLowerCase());
-            const type = safeAircraft.t || safeAircraft.desc || identity.type || identity.icao_type || (hasMetadata ? 'Unknown' : 'Looking up…');
+            const type = safeAircraft.t || safeAircraft.desc || live.type || identity.type || identity.icao_type || (hasMetadata ? 'Unknown' : 'Looking up…');
             const hex = String(safeAircraft.hex || '').toLowerCase();
             const registration = String(safeAircraft.r || safeAircraft.registration || identity.registration || '').trim();
             const manufacturer = String(identity.manufacturer || '').trim();
@@ -941,11 +1014,13 @@ def detail_fragment(hex_code: str) -> str:
 
     flight = str(target.get("flight") or target.get("callsign") or target.get("fn") or "").strip()
     metadata = metadata_for_aircraft(hex_code, flight)
+    live_identity = metadata.get("live_identity", {})
     db_aircraft = metadata.get("aircraft", {})
     route = metadata.get("flightroute", {})
 
-    registration = target.get("r") or target.get("registration") or db_aircraft.get("registration")
-    aircraft_type = target.get("t") or target.get("desc") or db_aircraft.get("type")
+    flight = flight or str(live_identity.get("callsign") or "").strip()
+    registration = target.get("r") or target.get("registration") or live_identity.get("registration") or db_aircraft.get("registration")
+    aircraft_type = target.get("t") or target.get("desc") or live_identity.get("type") or db_aircraft.get("type")
     icao_type = db_aircraft.get("icao_type")
     manufacturer = db_aircraft.get("manufacturer")
     operator = db_aircraft.get("registered_owner_operator_flag_code") or db_aircraft.get("registered_owner")
@@ -1082,7 +1157,13 @@ def get_aircraft_metadata(hex_code: str):
     target = next((a for a in data.get("aircraft", []) if str(a.get("hex", "")).strip().lower() == safe_hex), None)
     callsign = str(target.get("flight") or target.get("callsign") or target.get("fn") or "").strip() if isinstance(target, dict) else ""
     result = metadata_for_aircraft(safe_hex, callsign)
-    response = {"ok": result["ok"], "aircraft": result["aircraft"], "flightroute": result["flightroute"]}
+    response = {
+        "ok": result["ok"],
+        "aircraft": result["aircraft"],
+        "flightroute": result["flightroute"],
+        "live_identity": result["live_identity"],
+        "metadata_source": result["metadata_source"],
+    }
     return JSONResponse(response, headers={"Cache-Control": "public, max-age=300"})
 
 
