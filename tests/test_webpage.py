@@ -1,3 +1,4 @@
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -5,6 +6,7 @@ from unittest.mock import Mock, patch
 
 import requests
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import webpage
 
 
@@ -234,7 +236,7 @@ class PlanesTests(unittest.TestCase):
         webpage.record_feed_success({"now": 1234, **sample})
         with patch("webpage.get_aircraft_data", return_value=(sample, 0.01)), patch(
             "webpage.get_readsb_stats",
-            return_value={"total": {"start": 1000, "end": 1240, "messages": 123456, "tracks": {"all": 42}, "cpr": {"global_ok": 7}, "local": {"blocks_processed": 100, "blocks_dropped": 2, "signal": -12.3}},
+            return_value={"total": {"start": 1000, "end": 1240, "messages": 123456, "tracks": {"all": 42}, "cpr": {"global_ok": 7}, "local": {"blocks_processed": 100, "blocks_dropped": 2, "signal": -12.3}}},
         ):
             content = webpage.read_statistics()
         self.assertIn("Live snapshot", content)
