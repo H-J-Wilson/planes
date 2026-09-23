@@ -33,6 +33,13 @@ echo
 echo "=== Planes Raspberry Pi smoke test ==="
 echo "Planes: $PLANES_URL"
 echo "Feed:   $FEED_URL"
+
+FR24_CODE="$(http_code "http://127.0.0.1:8754/flights.json")"
+if [ "$FR24_CODE" = "200" ]; then
+  pass "FR24 local flights feed returns HTTP 200"
+else
+  warn "FR24 local flights feed is unavailable (HTTP ${FR24_CODE:-unknown})"
+fi
 echo
 
 command -v curl >/dev/null 2>&1 && pass "curl is installed" || fail "curl is not installed"
