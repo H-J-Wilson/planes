@@ -439,7 +439,7 @@ def dashboard_content() -> str:
               (filter.value === 'climbing' && Number.isFinite(vr) && vr > 100) ||
               (filter.value === 'descending' && Number.isFinite(vr) && vr < -100) ||
               (filter.value === 'position' && hasPosition) ||
-              (filter.value === 'favourite' && favs.has(String(safeAircraft.hex || '').toLowerCase()));
+              (filter.value === 'favourite' && favs.has(String(a.hex || '').toLowerCase()));
             const altitudeMatches = !hasMinAlt || (Number.isFinite(alt) && alt >= minAlt);
             const speedMatches = !hasMinSpd || (Number.isFinite(gs) && gs >= minSpd);
             return text.includes(q) && altitudeMatches && speedMatches && matchesFilter;
@@ -454,7 +454,7 @@ def dashboard_content() -> str:
           }});
 
           tbody.innerHTML = list.length ? list.map(a => {{
-            const safeAircraft = (a && typeof a === 'object') ? a : {};
+            const safeAircraft = (a && typeof a === 'object') ? a : {{}};
             const flight = String(safeAircraft.flight || safeAircraft.callsign || safeAircraft.fn || (safeAircraft.hex ? 'ICAO ' + String(safeAircraft.hex).toUpperCase() : 'Unknown')).trim();
             const type = safeAircraft.t || safeAircraft.type || safeAircraft.desc || 'Type unavailable';
             const hex = String(safeAircraft.hex || '').toLowerCase();
