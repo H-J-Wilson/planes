@@ -27,7 +27,7 @@ DEFAULT_SETTINGS = {
     "asbdb_cache_seconds": 30,
 }
 ASBDB_BASE = "https://api.adsbdb.com/v0/callsign/"
-APP_VERSION = "0.0.5"
+APP_VERSION = "0.0.5-test"
 FIRST_RUN_FILE = Path(".planes_setup_complete")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s planes: %(message)s")
