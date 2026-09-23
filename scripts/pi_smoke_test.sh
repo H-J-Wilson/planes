@@ -207,7 +207,9 @@ PY
   fi
   rm -f "$DASH_TMP"
 
-  DETAIL_HEX="$("$PYTHON" - "$FEED_TMP" <<'PY'
+  DETAIL_FEED_TMP="$(mktemp)"
+  if http_get "$FEED_URL" >"$DETAIL_FEED_TMP"; then
+    DETAIL_HEX="$("$PYTHON" - "$DETAIL_FEED_TMP" <<'PY'
 import json
 import re
 import sys
@@ -220,6 +222,10 @@ for aircraft in data.get("aircraft", []):
         break
 PY
 )"
+  else
+    DETAIL_HEX=""
+  fi
+  rm -f "$DETAIL_FEED_TMP"
   if [ -n "$DETAIL_HEX" ]; then
     DETAIL_CODE="$(http_code "$PLANES_URL/api/aircraft/$DETAIL_HEX")"
     if [ "$DETAIL_CODE" = "200" ]; then
@@ -227,8 +233,14 @@ PY
     else
       fail "valid aircraft detail endpoint returned HTTP $DETAIL_CODE ($DETAIL_HEX)"
     fi
+    META_CODE="$(http_code "$PLANES_URL/api/aircraft-metadata/$DETAIL_HEX")"
+    if [ "$META_CODE" = "200" ]; then
+      pass "aircraft metadata endpoint returns HTTP 200 ($DETAIL_HEX)"
+    else
+      fail "aircraft metadata endpoint returned HTTP $META_CODE ($DETAIL_HEX)"
+    fi
   else
-    warn "no valid aircraft HEX available for detail endpoint test"
+    warn "no valid aircraft HEX available for detail/metadata endpoint test"
   fi
 
   TEST_TMP="$(mktemp)"
