@@ -8,7 +8,7 @@ import re
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 import fastapi
 import requests
@@ -185,6 +185,135 @@ def setup_content() -> str:
     </script>'''
 
 
+AIRCRAFT_LOOKUP_BASE = "https://api.adsbdb.com/v0/aircraft/"
+
+
+def valid_aircraft_identifier(value: Any) -> bool:
+    return bool(re.fullmatch(r"~?[0-9a-f]{6}", str(value or "").strip().lower()))
+
+
+# Lightweight in-memory session metrics. These reset when Planes restarts.
+PLANES_SESSION_STARTED = time.time()
+PLANES_SESSION_LAST_SNAPSHOT: Any = None
+PLANES_SESSION_SAMPLES = 0
+PLANES_SESSION_AIRCRAFT_TOTAL = 0
+PLANES_SESSION_PEAK_AIRCRAFT = 0
+PLANES_SESSION_UNIQUE_HEX: set[str] = set()
+PLANES_SESSION_HIGHEST_ALTITUDE: float | None = None
+PLANES_SESSION_FASTEST_SPEED: float | None = None
+PLANES_SESSION_FEED_UP = False
+PLANES_SESSION_FEED_INTERRUPTS = 0
+
+
+def record_feed_success(data: dict[str, Any]) -> None:
+    global PLANES_SESSION_LAST_SNAPSHOT, PLANES_SESSION_SAMPLES
+    global PLANES_SESSION_AIRCRAFT_TOTAL, PLANES_SESSION_PEAK_AIRCRAFT
+    global PLANES_SESSION_HIGHEST_ALTITUDE, PLANES_SESSION_FASTEST_SPEED
+    global PLANES_SESSION_FEED_UP
+    PLANES_SESSION_FEED_UP = True
+    snapshot_key = data.get("now")
+    if snapshot_key == PLANES_SESSION_LAST_SNAPSHOT:
+        return
+    PLANES_SESSION_LAST_SNAPSHOT = snapshot_key
+    aircraft = [a for a in data.get("aircraft", []) if isinstance(a, dict)]
+    count = len(aircraft)
+    PLANES_SESSION_SAMPLES += 1
+    PLANES_SESSION_AIRCRAFT_TOTAL += count
+    PLANES_SESSION_PEAK_AIRCRAFT = max(PLANES_SESSION_PEAK_AIRCRAFT, count)
+    for plane in aircraft:
+        hex_code = str(plane.get("hex") or "").strip().lower()
+        if hex_code:
+            PLANES_SESSION_UNIQUE_HEX.add(hex_code)
+        altitude = plane.get("alt_baro")
+        if isinstance(altitude, (int, float)):
+            PLANES_SESSION_HIGHEST_ALTITUDE = max(PLANES_SESSION_HIGHEST_ALTITUDE or altitude, altitude)
+        speed = plane.get("gs")
+        if isinstance(speed, (int, float)):
+            PLANES_SESSION_FASTEST_SPEED = max(PLANES_SESSION_FASTEST_SPEED or speed, speed)
+
+
+def record_feed_failure() -> None:
+    global PLANES_SESSION_FEED_UP, PLANES_SESSION_FEED_INTERRUPTS
+    if PLANES_SESSION_FEED_UP:
+        PLANES_SESSION_FEED_INTERRUPTS += 1
+    PLANES_SESSION_FEED_UP = False
+
+
+def format_duration(seconds: float | int | None) -> str:
+    if seconds is None:
+        return "—"
+    total = max(0, int(seconds))
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours}h {minutes}m"
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def format_number(value: Any) -> str:
+    if isinstance(value, float):
+        return f"{value:,.1f}"
+    if isinstance(value, int):
+        return f"{value:,}"
+    return clean(value)
+
+
+def readsb_stats_url() -> str:
+    return urljoin(load_settings()["aircraft_data_url"], "stats.json")
+
+
+def get_readsb_stats() -> dict[str, Any] | None:
+    try:
+        response = requests.get(readsb_stats_url(), timeout=2)
+        response.raise_for_status()
+        data = response.json()
+        return data if isinstance(data, dict) else None
+    except (requests.RequestException, ValueError, TypeError, json.JSONDecodeError) as exc:
+        logger.info("readsb stats request failed: %s", exc)
+        return None
+
+
+_aircraft_metadata_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
+
+
+def aircraft_metadata_lookup(hex_code: str, callsign: str = "") -> dict[str, Any] | None:
+    hex_code = str(hex_code or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{6}", hex_code):
+        return None
+    now = time.time()
+    cached = _aircraft_metadata_cache.get(hex_code)
+    if cached and now - cached[0] < 86400:
+        return cached[1]
+    url = AIRCRAFT_LOOKUP_BASE + quote(hex_code, safe="")
+    if callsign:
+        url += "?callsign=" + quote(callsign.strip().upper(), safe="")
+    try:
+        response = requests.get(url, timeout=3)
+        if response.status_code == 404:
+            _aircraft_metadata_cache[hex_code] = (now, None)
+            return None
+        response.raise_for_status()
+        payload = response.json()
+        root = payload.get("response", {}) if isinstance(payload, dict) else {}
+        aircraft = root.get("aircraft") if isinstance(root, dict) else None
+        route = root.get("flightroute") if isinstance(root, dict) else None
+        result: dict[str, Any] = {}
+        if isinstance(aircraft, dict):
+            result["aircraft"] = aircraft
+        if isinstance(route, dict):
+            result["flightroute"] = route
+        _aircraft_metadata_cache[hex_code] = (now, result or None)
+        return result or None
+    except (requests.RequestException, ValueError, TypeError, AttributeError) as exc:
+        logger.info("Aircraft metadata lookup failed for %s: %s", hex_code, exc)
+        return None
+
+
 def save_settings(settings: dict[str, Any]) -> None:
     SETTINGS_FILE.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 
@@ -216,11 +345,14 @@ def get_aircraft_data() -> tuple[dict[str, Any], float | None]:
             raise ValueError("Aircraft feed did not return the expected JSON structure.")
         LAST_GOOD_DATA = data
         LAST_GOOD_AVAILABLE = True
+        record_feed_success(data)
         return data, time.monotonic() - started
     except requests.RequestException as exc:
         logger.warning("Aircraft feed request failed: %s", exc)
+        record_feed_failure()
     except (ValueError, TypeError, json.JSONDecodeError) as exc:
         logger.warning("Aircraft feed returned invalid data: %s", exc)
+        record_feed_failure()
 
     if LAST_GOOD_AVAILABLE:
         return LAST_GOOD_DATA, None
@@ -238,20 +370,20 @@ def aircraft_rows(aircraft: list[dict[str, Any]]) -> str:
         if not isinstance(plane, dict):
             continue
         hex_code = str(plane.get("hex", "")).strip().lower()
-        valid_hex = bool(re.fullmatch(r"[0-9a-f]{6}", hex_code))
-        flight = str(plane.get("flight") or plane.get("callsign") or plane.get("fn") or "").strip() or (f"ICAO {hex_code.upper()}" if valid_hex else "Unknown")
-        aircraft_type = str(plane.get("t") or plane.get("type") or plane.get("desc") or "").strip() or "Type unavailable"
+        valid_id = valid_aircraft_identifier(hex_code)
+        flight = str(plane.get("flight") or plane.get("callsign") or plane.get("fn") or "").strip() or (f"ICAO {hex_code.replace('~','').upper()}" if valid_id else "Unknown")
+        aircraft_type = str(plane.get("t") or plane.get("desc") or "").strip() or "Type unavailable"
         registration = str(plane.get("r") or plane.get("registration") or "").strip()
         speed = plane.get("gs", "—")
         altitude = plane.get("alt_baro", "—")
-        fav_key = clean(hex_code) if valid_hex else ""
-        details = f"/aircraft/{quote(hex_code, safe='')}" if valid_hex else "#"
+        fav_key = clean(hex_code) if valid_id else ""
+        details = f"/aircraft/{quote(hex_code, safe='')}" if valid_id else "#"
         registration_html = f'<small class="unit">{clean(registration)}</small>' if registration else ""
         favourite_html = (
             f'<button type="button" class="favourite-button" data-favourite="{fav_key}" aria-label="Add {clean(flight)} to favourites" aria-pressed="false">☆</button>'
-            if valid_hex else ""
+            if valid_id else ""
         )
-        details_html = f'<a class="text-link" href="{details}">View details</a>' if valid_hex else ""
+        details_html = f'<a class="text-link" href="{details}">View details</a>' if valid_id else ""
         rows.append(
             f'''<tr data-aircraft-row data-flight="{clean(flight).lower()}" data-type="{clean(aircraft_type).lower()}" data-hex="{fav_key}">
                 <td><span class="mobile-label">Flight</span><strong>{clean(flight)}</strong>{registration_html}</td>
