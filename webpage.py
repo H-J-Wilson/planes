@@ -286,7 +286,11 @@ def dashboard_content() -> str:
           if (!key) return;
           const favs = new Set(favouriteState());
           if (favs.has(key)) favs.delete(key); else favs.add(key);
-          localStorage.setItem('planes-favourites', JSON.stringify([...favs]));
+          try {{
+            localStorage.setItem('planes-favourites', JSON.stringify([...favs]));
+          }} catch {{
+            tableStatus.textContent = 'Favourites could not be saved in this browser.';
+          }}
           renderRows();
         }}
         function renderRows() {{
