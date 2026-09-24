@@ -1,442 +1,28 @@
 # Planes
 
-A small, mobile-first local web interface for an ADS-B receiver running readsb/tar1090.
+Local web interface for an ADS-B receiver using readsb/tar1090.
 
-Planes is designed to sit alongside an existing ADS-B setup: it reads the aircraft JSON feed produced by readsb/tar1090 and turns it into a simple dashboard, statistics view and aircraft information interface.
+Planes reads the aircraft JSON feed and provides a live dashboard, aircraft details, statistics and settings. It does not control the RTL-SDR.
 
-## Current version
-
-**v0.0.5**
-
-v0.0.5 adds a feed-testing tool in Settings, clearer live feed freshness information, improved aircraft search/filtering and continued documentation/stability improvements.
-
-## Updates
-
-New versions of Planes are published through GitHub Releases. Updating regularly is recommended so you receive bug fixes, improvements and new features.
-
-### Check your installed version
-
-The current application version is shown in the interface. You can also check the Git branch/tag you are running with:
-
-```bash
-cd ~/planes
-git status
-git describe --tags --always
-```
-
-### Update a normal Planes installation
-
-If you installed Planes by cloning this repository, stop the running Planes process first, then:
-
-```bash
-cd ~/planes
-git status
-git pull
-source venv/bin/activate
-pip install -r requirements.txt
-python main.py
-```
-
-If the update changes Python dependencies, the `pip install -r requirements.txt` step makes sure the virtual environment has the required versions.
-
-### Before updating
-
-Run:
-
-```bash
-git status
-```
-
-If it reports local changes, **do not blindly run `git pull`**. Save or back up your work first. This is especially important if you have edited `webpage.py` or other project files yourself.
-
-Your local settings are intended to remain separate from the application code. If you have customised the installation, keep a backup of any important configuration before a major update.
-
-### Updating to a specific release
-
-To use a particular tagged release:
-
-```bash
-cd ~/planes
-git fetch --tags
-git checkout v0.0.5
-source venv/bin/activate
-pip install -r requirements.txt
-python main.py
-```
-
-Replace `v0.0.5` with the release you want.
-
-For normal use, staying on `main` gives you the latest merged development changes. For a more predictable installation, use a numbered release tag.
-
-### After updating
-
-Check that:
-
-1. Planes starts without errors.
-2. The Dashboard loads.
-3. Aircraft are appearing.
-4. **Settings → Test feed** reports that the aircraft feed is working.
-5. Statistics and aircraft details still load correctly.
-
-If something breaks after an update, check the **Common problems and fixes** section below and keep the terminal error output when reporting the problem.
-
-
-## Current features
-
-- Live aircraft count and feed status
-- Configurable aircraft JSON URL
-- Search by flight/callsign, aircraft type and ICAO HEX
-- Sorting
-- Device-local favourites
-- Configurable refresh interval
-- Improved aircraft search across callsign, type, description, registration and HEX
-- Dashboard filters for movement, climbing, descending, valid position, favourites, minimum altitude and minimum speed
-- Aircraft detail pages
-- ICAO/HEX, callsign, type, squawk, altitude, speed, position, distance and bearing information when supplied by the feed
-- Optional ASBDB callsign/route information
-- Statistics page
-- Dark, light and system themes
-- Responsive mobile layout
-- Keyboard-friendly navigation, skip link, visible focus, semantic headings and table headers
-- Reduced-motion support and status announcements for dynamic updates
-- Built-in Documentation page
-- Configurable settings saved locally by the application
-
-## How Planes works
-
-Planes does **not** control the RTL-SDR directly.
-
-A typical setup is:
+## How it works
 
 ```text
-RTL-SDR → readsb → tar1090/readsb JSON → Planes → Web browser
+RTL-SDR → readsb → tar1090/readsb JSON → Planes → Browser
 ```
 
-The default aircraft feed is:
+Default feed:
 
 ```text
 http://127.0.0.1:8504/data/aircraft.json
 ```
 
-Using `127.0.0.1` means the feed is expected to be available on the same machine running Planes. If Planes and readsb are on different machines, use the appropriate reachable feed URL in **Settings**.
+## Requirements
 
-## First-time setup
-
-### Requirements
-
+- Raspberry Pi/Linux/macOS
 - Python 3.10+
-- A working readsb/tar1090 aircraft JSON feed
-- Network access to the machine running Planes
-- A modern web browser
+- Working readsb/tar1090 aircraft JSON feed
 
-### Install
-
-From the Planes project directory:
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python main.py
-```
-
-On Windows, activate the virtual environment with:
-
-```text
-venv\\Scripts\\activate
-```
-
-Then open:
-
-```text
-http://<your-pi-ip>:8000
-```
-
-For example, if your Raspberry Pi is on `192.168.0.33`:
-
-```text
-http://192.168.0.33:8000
-```
-
-### Check the aircraft feed first
-
-Before troubleshooting Planes, verify that readsb is producing aircraft JSON.
-
-On the receiver machine:
-
-```bash
-curl http://127.0.0.1:8504/data/aircraft.json
-```
-
-A working response should contain JSON with an `aircraft` list.
-
-If this URL does not work, fix the readsb/tar1090 setup first. Planes cannot display aircraft that are not present in its configured feed.
-
-## Starting Planes
-
-Activate the virtual environment and run:
-
-```bash
-source venv/bin/activate
-python main.py
-```
-
-The server listens on port **8000**.
-
-Then visit:
-
-```text
-http://<your-pi-ip>:8000
-```
-
-Keep the terminal running while using Planes.
-
-## Restarting Planes
-
-If you stopped Planes with `Ctrl+C`, simply start it again:
-
-```bash
-cd ~/planes
-source venv/bin/activate
-python main.py
-```
-
-If you are not sure whether it is already running, check port 8000:
-
-```bash
-ss -ltnp | grep :8000
-```
-
-If another Planes process is already using port 8000, do not start a second copy. Stop the existing process or use the existing web page.
-
-### Restarting after a Raspberry Pi reboot
-
-If Planes is currently started manually with `python main.py`, it will stop when the Pi reboots.
-
-To make Planes start automatically, create a systemd service. Example:
-
-```ini
-[Unit]
-Description=Planes aircraft web interface
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-User=YOUR_USER
-WorkingDirectory=/home/YOUR_USER/planes
-ExecStart=/home/YOUR_USER/planes/venv/bin/python /home/YOUR_USER/planes/main.py
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Save it as:
-
-```text
-/etc/systemd/system/planes.service
-```
-
-Then:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now planes
-sudo systemctl status planes
-```
-
-Replace `YOUR_USER` with the Linux username that owns the Planes installation.
-
-## User guide
-
-### Dashboard
-
-The Dashboard is the main live aircraft view.
-
-Use it to:
-
-- See the current number of aircraft
-- Search for a callsign, aircraft type or HEX
-- Sort the aircraft list
-- Favourite an aircraft
-- Open aircraft details
-- Manually refresh the data
-- Watch the automatic refresh status
-
-### Aircraft details
-
-Open an aircraft from the Dashboard to see the information currently available from the receiver.
-
-Depending on the aircraft and feed, this can include:
-
-- ICAO/HEX
-- Callsign
-- Aircraft type
-- Squawk
-- Altitude
-- Ground speed
-- Latitude/longitude
-- Distance from the receiver
-- Bearing
-- Scheduled route information from ASBDB, when available
-
-Not every aircraft transmits every field, so missing information is normal.
-
-### Statistics
-
-Statistics summarise the aircraft currently visible to the receiver.
-
-The exact values depend on the data currently supplied by readsb. Missing or invalid measurements are excluded from calculations where appropriate.
-
-### Settings
-
-Settings lets you configure:
-
-- **Aircraft data URL** — the JSON feed Planes reads
-- **Refresh interval** — how often the live data is refreshed
-- **ASBDB lookups** — whether optional scheduled route information is requested
-
-Theme selection is handled in the interface and stored in the browser.
-
-### Favourites
-
-Use the star/favourite control to mark aircraft you want to find again.
-
-Favourites are stored locally in the browser/device rather than being synchronised to a server.
-
-## Common problems and fixes
-
-### No aircraft are showing
-
-Check the configured feed URL.
-
-On the Pi:
-
-```bash
-curl http://127.0.0.1:8504/data/aircraft.json
-```
-
-If it fails, check that readsb is running:
-
-```bash
-systemctl status readsb
-```
-
-Also check that the URL in **Settings** matches the machine running the feed.
-
-### The Planes page will not load
-
-Check that Planes is running:
-
-```bash
-ss -ltnp | grep :8000
-```
-
-Then try the page from the Pi itself:
-
-```bash
-curl -I http://127.0.0.1:8000/
-```
-
-If that works on the Pi but not from another device, check the Pi's IP address, network connection and firewall configuration.
-
-### Aircraft type says Unknown
-
-The receiver has not supplied usable aircraft type/description information for that aircraft.
-
-This does not necessarily mean the aircraft itself is unknown. Planes currently displays the information available from the feed rather than inventing a type.
-
-### Route information is missing
-
-ASBDB is optional and may not have route information for every callsign.
-
-Check that ASBDB lookups are enabled in Settings and that the aircraft has a usable callsign.
-
-### The feed works with curl but Planes shows an error
-
-Check that the URL in **Settings** is exactly the URL that works with curl.
-
-Also make sure the response is valid JSON and contains the expected aircraft data.
-
-### Changes in Settings do not seem to apply
-
-Save the settings and refresh the page.
-
-If a browser has cached an old version of the interface, perform a normal hard refresh.
-
-### Port 8000 is already in use
-
-Find the process using the port:
-
-```bash
-ss -ltnp | grep :8000
-```
-
-Do not run another Planes instance on the same port. Stop the old process first if necessary.
-
-### `ModuleNotFoundError`
-
-Make sure the virtual environment is activated:
-
-```bash
-source venv/bin/activate
-```
-
-Then reinstall the requirements:
-
-```bash
-pip install -r requirements.txt
-```
-
-You can check the Python interpreter with:
-
-```bash
-which python
-python --version
-```
-
-### `pip` or dependency installation fails
-
-First check your Python version:
-
-```bash
-python3 --version
-```
-
-Then update pip inside the virtual environment:
-
-```bash
-python -m pip install --upgrade pip
-```
-
-Run the installation again:
-
-```bash
-pip install -r requirements.txt
-```
-
-If installation still fails, keep the complete error message when reporting the problem. The final lines alone often do not contain the real cause.
-
-## Updating Planes from GitHub
-
-Before updating, stop the currently running Planes process.
-
-Then:
-
-```bash
-cd ~/planes
-git status
-git pull
-source venv/bin/activate
-pip install -r requirements.txt
-python main.py
-```
-
-If you have local changes, do **not** blindly run `git pull`. Check `git status` first so local work is not overwritten or put into a difficult merge.
-
-## Development
-
-Clone the repository:
+## Install
 
 ```bash
 git clone https://github.com/H-J-Wilson/planes.git
@@ -447,236 +33,394 @@ pip install -r requirements.txt
 python main.py
 ```
 
-The application is currently a small Python web application with the main server entry point in `main.py` and the web interface/routes in `webpage.py`.
-
-## Accessibility
-
-The project is designed to be checked with the WAVE browser extension at the rendered-page level.
-
-Test at least:
-
-- Dashboard
-- Statistics
-- Settings
-- Aircraft details
-- Documentation
-- Mobile-width viewport
-- Keyboard-only navigation
-- 200% zoom/reflow
-- Light and dark themes
-- Reduced-motion behaviour
-
-WAVE is an automated aid, not a complete accessibility certification; manual keyboard and visual checks are still required.
-
-## Future roadmap
-
-The following are planned ideas and are **not all implemented in v0.0.5**.
-
-### Aircraft and tracking
-
-- Military aircraft detection with clear MIL badges
-- New Tracks mode for recently appeared aircraft
-- Interesting-aircraft detection
-- First-seen and last-seen times
-- Track duration
-- Remember aircraft seen during the day/week
-- Aircraft history and previous observations
-
-### Better aircraft cards
-
-Potential additional fields include:
-
-- Callsign
-- Registration
-- Aircraft type and full description
-- Operator
-- Origin → destination airport codes such as `BHX → LHR`
-- Altitude
-- Ground speed
-- IAS / TAS
-- Mach
-- Heading
-- Vertical rate
-- Roll
-- Turn rate
-- Distance from receiver
-- Position age
-- Messages received
-- Time tracked
-- Military/interesting status
-
-Some fields depend on what the receiver actually supplies; Planes should not imply that a value is available when it is not.
-
-### More statistics
-
-Possible future normal statistics:
-
-- Aircraft currently visible
-- New tracks
-- Military aircraft
-- Unique aircraft today
-- Average altitude
-- Average speed
-- Average distance
-- Aircraft with valid positions
-- Aircraft currently climbing/descending
-
-Possible niche statistics:
-
-- Highest altitude
-- Fastest ground speed
-- Fastest TAS
-- Highest Mach
-- Fastest climb
-- Fastest descent
-- Sharpest turn
-- Largest roll
-- Furthest aircraft
-- Closest aircraft
-- Most messages received
-- Strongest signal
-- Longest tracked aircraft
-- Most new tracks
-- Most military tracks
-- Most common operator
-- Most common aircraft type
-- Most common origin
-- Most common destination
-
-### Records
-
-A future Records section could maintain:
-
-- Highest aircraft ever seen
-- Fastest aircraft
-- Fastest climb/descent
-- Sharpest turn
-- Highest Mach
-- Furthest aircraft
-- Closest aircraft
-- Longest tracked aircraft
-- Most messages
-
-with **Today / 7 Days / All Time** views.
-
-### Alerts
-
-Optional future alerts could include:
-
-- Military aircraft detected
-- New aircraft detected
-- Aircraft very close to the receiver
-- Very high altitude
-- Very high speed
-- Emergency squawks
-- Interesting aircraft
-- Specific callsigns or registrations
-
-### Receiver statistics
-
-Future receiver monitoring could include:
-
-- Aircraft count
-- Messages/sec
-- Position updates/sec
-- Maximum range
-- Feed latency
-- CPU usage
-- Memory usage
-- Uptime
-- Receiver performance over time
-
-### "What changed?" summary
-
-A future dashboard summary could show changes since the previous update, for example:
+Open:
 
 ```text
-Since last update
-
-+7 new aircraft
--4 disappeared
-+1 military
-+2 interesting
-Highest altitude ↑ 3,200 ft
-Fastest aircraft ↑ 41 kt
+http://<PI-IP>:8000
 ```
 
-### Historical data
+Example:
 
-Eventually, Planes could keep a local database containing:
+```text
+http://192.168.0.33:8000
+```
 
-- Every aircraft observed
-- First/last seen
-- Number of sightings
-- Total tracking time
-- Maximum altitude
-- Maximum speed
-- Historical statistics
-- Daily/weekly/monthly summaries
+Before troubleshooting Planes, check the receiver feed:
 
-The long-term goal is to develop Planes from a live aircraft viewer into a **personal ADS-B tracking and statistics system**, while keeping the interface focused and without requiring a map.
+```bash
+curl http://127.0.0.1:8504/data/aircraft.json
+```
 
-## Data sources
+The response should be JSON containing an `aircraft` list.
 
-### readsb / tar1090
+## First-run setup
 
-Provides the live aircraft data from the local ADS-B receiver.
+On a new installation, opening Planes shows a short setup screen before the Dashboard.
 
-### ASBDB
+It asks for:
 
-Provides optional scheduled flight/route information when a callsign can be matched.
+- **Aircraft data URL** — normally `http://127.0.0.1:8504/data/aircraft.json`
+- **Refresh interval**
+- **Base theme** — system, dark or light
+- **ASBDB route lookups** — optional
 
-ASBDB is supplementary information and is not the source of the live aircraft position.
+Use **Test feed** before saving the URL. Then choose **Save and open Planes**.
+
+The setup completion marker is stored locally as `.planes_setup_complete` and is ignored by Git. Existing settings are prefilled, so an existing installation can normally keep the current configuration.
+
+Settings can be changed later from **Settings**.
+
+## Update
+
+Stop Planes first.
+
+Check for local changes:
+
+```bash
+cd ~/planes
+git status
+```
+
+For the normal development branch:
+
+```bash
+git checkout main
+git pull
+source venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+Do not run `git pull` when `git status` shows work you need to keep.
+
+## Testing the current fixes
+
+The current reliability fixes are on:
+
+```text
+v0.0.5-audit-fixes
+```
+
+On the Pi:
+
+```bash
+cd ~/planes
+git fetch origin
+git checkout v0.0.5-audit-fixes
+git pull
+source venv/bin/activate
+pip install -r requirements.txt
+python main.py
+```
+
+This branch is a test candidate, not a released version.
+
+## Raspberry Pi smoke test
+
+The repository includes a **safe, non-destructive** Pi smoke test. It does not stop or restart readsb/Planes and does not modify `settings.json`.
+
+Run it from the Planes directory:
+
+```bash
+cd ~/planes
+bash scripts/pi_smoke_test.sh
+```
+
+It checks:
+
+- Python and required imports
+- Python syntax
+- readsb service state
+- the live aircraft JSON feed
+- Planes on port 8000
+- Dashboard/HTML aircraft-row rendering
+- Dashboard, Statistics, Settings, Documentation, About, Contact and Setup
+- `/static/output.css`
+- `/api/dashboard-data`
+- `/api/test-feed`
+- `/api/test-feed-url`
+- `/api/aircraft-metadata/<hex>`
+- invalid feed URL rejection
+- invalid aircraft identifier rejection
+
+A normal successful result ends with:
+
+```text
+Result: PASSED
+```
+
+Warnings do not fail the script. Any `FAIL` result makes the script exit with code 1.
+
+You can override the URLs without editing the script:
+
+```bash
+PLANES_URL=http://127.0.0.1:8000 \
+FEED_URL=http://127.0.0.1:8504/data/aircraft.json \
+bash scripts/pi_smoke_test.sh
+```
+
+The smoke test checks whether the system is working; it does not test recovery from a deliberately broken feed. Use the manual feed-failure test below for that.
+
+## Manual feed-failure test
+
+This is the important reliability test after the smoke test passes.
+
+1. Open Planes and wait for aircraft to appear.
+2. On the Pi run:
+
+```bash
+sudo systemctl stop readsb
+```
+
+3. Wait for at least one Dashboard refresh.
+4. Confirm the aircraft list remains visible and the status changes to stale/unavailable.
+5. Start readsb again:
+
+```bash
+sudo systemctl start readsb
+```
+
+6. Wait for fresh data and confirm the Dashboard returns to a live/healthy state.
+
+This is intentionally manual so the test cannot accidentally disrupt the receiver.
+
+## Dashboard
+
+The Dashboard provides:
+
+- live aircraft count
+- feed status
+- receiver data age
+- search by callsign, type/description, registration, HEX and other available metadata
+- sorting by flight, type, speed, altitude and distance
+- moving, climbing, descending and valid-position filters
+- favourites
+- minimum altitude and speed filters
+- manual refresh
+- automatic refresh
+- aircraft detail links
+
+Aircraft fields depend on what readsb supplies. Missing values are normal.
+
+## Aircraft details
+
+The details page is organised into identity, live flight data, navigation/transponder data, receiver/signal data and scheduled route information. Identity is enriched from ADSBDB by Mode-S HEX when available; live telemetry remains from readsb.
+
+Details can include:
+
+- ICAO HEX / Mode-S
+- flight number and ICAO/IATA callsign when available
+- registration
+- aircraft type and ICAO type
+- manufacturer and operator/owner metadata from ADSBDB when available
+- squawk
+- altitude
+- ground speed
+- vertical rate
+- heading
+- latitude/longitude
+- distance and bearing
+- signal level
+- scheduled route information from ASBDB when available
+
+## Statistics
+
+The Statistics page is split into three periods, with the longer periods collapsible so the page keeps the full set of metrics without becoming a wall of cards:
+
+- **Live snapshot** — what is happening right now.
+- **Since Planes started** — session metrics such as unique aircraft seen, peak/average aircraft count, highest altitude, fastest speed, snapshots and feed interruptions.
+- **Since readsb started** — receiver totals from readsb stats.json, including running time, accepted messages, tracks, CPR positions, SDR blocks and signal information when available.
+
+This gives you both current activity and running-period totals without treating a live snapshot as historical data.
+
+## Settings
+
+Settings controls:
+
+- **Aircraft data URL** — JSON feed used by Planes
+- **Refresh interval** — browser refresh rate
+- **ASBDB** — optional scheduled route lookup
+- **Theme** — system, dark or light
+
+Use **Test feed** before saving a new URL. It checks the URL currently typed into the box.
+
+## Favourites
+
+Favourites are stored in the browser's local storage. They are not sent to a server.
+
+## Troubleshooting
+
+### No aircraft
+
+```bash
+curl http://127.0.0.1:8504/data/aircraft.json
+systemctl status readsb
+```
+
+### Planes will not load
+
+```bash
+ss -ltnp | grep :8000
+curl -I http://127.0.0.1:8000/
+```
+
+### Aircraft type says Unknown
+
+In readsb, the `type` field describes the message/source type such as `adsb_icao` or `mlat`; it is not the aircraft model. Planes therefore uses `t`/`desc` for the displayed aircraft type. The current receiver feed may legitimately omit those database fields.
+
+Aircraft detail pages can query ADSBDB by the normal six-character Mode-S HEX to fill in registration, aircraft type, manufacturer and related metadata when available.
+
+### Route information is missing
+
+ASBDB is optional and may not have a route for every callsign. A live receiver object must also provide a usable flight/callsign before a route lookup can be made.
+
+### Dependency installation fails
+
+Activate the virtual environment and retry:
+
+```bash
+source venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### Port 8000 is already in use
+
+```bash
+ss -ltnp | grep :8000
+```
+
+Stop the existing Planes process before starting another one.
 
 ## Project structure
-
-Important files include:
 
 ```text
 planes/
 ├── main.py
 ├── webpage.py
+├── settings.json
 ├── requirements.txt
-├── README.md
-└── static/
+├── static/
+├── scripts/
+│   └── pi_smoke_test.sh
+├── tests/
+└── README.md
 ```
 
-The exact repository contents can change between versions.
+`main.py` starts Uvicorn.
 
-## Version history
+`webpage.py` contains the FastAPI application, routes, feed handling, HTML generation and Dashboard JavaScript.
 
-### v0.0.5
+`settings.json` stores local application settings.
 
-- Improved Dashboard search to cover callsign, type, description, registration and HEX.
-- Added Dashboard filters for movement, climb/descent, valid position, favourites, minimum altitude and minimum speed.
-- Added distance sorting.
-- Added **Test feed** in Settings to check the configured aircraft JSON endpoint.
-- Added live **data age** information to the Dashboard when the readsb feed provides a timestamp.
-- Added clearer feed-test error handling.
-- Updated application version references and documentation.
+`requirements.txt` defines Python dependencies.
 
-### v0.0.4
+`scripts/pi_smoke_test.sh` checks the running Pi installation without changing it.
 
-- Added the Documentation page
-- Added Documentation to the main navigation
-- Expanded user guidance and troubleshooting
-- Updated application version references
+`tests/` contains backend reliability tests.
 
-### v0.0.3
+## Testing checklist
 
-- Live aircraft dashboard improvements
-- Aircraft detail information
-- Statistics
-- Settings
-- Favourites
-- Responsive interface
-- Accessibility and theme improvements
+### Dashboard
 
-## Licence
+- first-run setup completes
+- page loads
+- aircraft appear
+- aircraft rows contain Flight and Aircraft values (or a clear fallback)
+- `adsb_icao` / `mlat` are not displayed as aircraft model names
+- non-ICAO `~xxxxxx` readsb identifiers can open details and be favourited
+- search reports its match count
+- favourite state survives refreshes
+- missing aircraft types begin enriching automatically
+- aircraft count updates
+- data age updates
+- automatic refresh works
+- manual refresh works
+- callsign search works
+- HEX search works
+- type/description search works
+- registration search works
+- clearing search works
+- all/moving/climbing/descending filters work
+- valid-position filter works
+- favourites filter works
+- minimum altitude works
+- minimum speed works
+- sorting works
+- favourite star works
+- aircraft details open
 
-See the `LICENSE` file in the repository.
+### Settings
 
-## Links
+- test the current URL
+- test a bad URL
+- test an unsaved new URL
+- save a valid URL
+- change refresh interval
+- toggle ASBDB
+- change theme
 
-- Repository: https://github.com/H-J-Wilson/planes
-- Releases: https://github.com/H-J-Wilson/planes/releases
+### Other pages
+
+- Statistics, including live, Planes-session and readsb-period sections
+- Aircraft Details, including ADSBDB metadata enrichment
+- Documentation
+- About
+- Contact
+
+### Mobile
+
+Check a narrow browser window and make sure controls and tables still fit.
+
+## Automated tests
+
+Run locally with:
+
+```bash
+source venv/bin/activate
+python -m py_compile main.py webpage.py
+python -m unittest discover -s tests -v
+```
+
+GitHub Actions also compiles and tests the project on Python 3.10–3.13 and checks the Pi smoke-test script syntax.
+
+## Current release state
+
+Latest released version: **v0.0.5**
+
+The branch `v0.0.5-audit-fixes` contains reliability and polish fixes found during post-release testing.
+
+Do not treat the audit branch as a release until the Pi checklist passes.
+
+## Raspberry Pi dependency note
+
+The project requirements force pip to use PyPI directly:
+
+```text
+--index-url https://pypi.org/simple
+```
+
+This avoids the piwheels package-metadata problem reported during installation on Raspberry Pi OS.
+
+## Data sources
+
+### readsb / tar1090
+
+Live aircraft JSON plus stats.json receiver-period statistics.
+
+### ASBDB
+
+Optional aircraft metadata and scheduled flight/route/airline information. It is not the source of live aircraft position data.
+
+## Roadmap
+
+Planned ideas include:
+
+- military aircraft detection
+- New Tracks mode
+- richer aircraft cards
+- airport codes
+- more receiver/aircraft statistics
+- historical records
+- alerts
+- track history
