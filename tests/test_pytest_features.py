@@ -85,7 +85,7 @@ def test_aircraft_rows_support_non_icao_ids():
 
 
 # --- Metadata and enrichment ---
-def def test_fr24_live_identity_uses_local_feed(monkeypatch):
+def test_fr24_live_identity_uses_local_feed(monkeypatch):
     monkeypatch.setattr(
         webpage.requests,
         "get",
@@ -208,7 +208,7 @@ def test_dashboard_handles_missing_type_without_using_source_type(monkeypatch):
 
 
 # --- Feed and session statistics ---
-def def test_record_feed_success_collects_session_metrics():
+def test_record_feed_success_collects_session_metrics():
     webpage.record_feed_success({"now": 1000, "aircraft": [
         {"hex": "4cad7d", "alt_baro": 30000, "gs": 400},
         {"hex": "3c6566", "alt_baro": 28000, "gs": 350},
@@ -259,7 +259,7 @@ def test_statistics_contains_all_three_periods(monkeypatch):
 
 
 # --- Setup and settings ---
-def def test_setup_marker_round_trip(tmp_path):
+def test_setup_marker_round_trip(tmp_path):
     webpage.FIRST_RUN_FILE = tmp_path / ".planes_setup_complete"
     assert not webpage.setup_complete()
     webpage.mark_setup_complete()
