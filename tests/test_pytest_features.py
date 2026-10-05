@@ -1,3 +1,5 @@
+"""Focused pytest coverage for reliability, metadata enrichment, and session behavior."""
+
 import json
 import sys
 from pathlib import Path
@@ -10,6 +12,8 @@ import webpage
 
 
 @pytest.fixture(autouse=True)
+# --- Shared test state ---
+
 def reset_app_state(tmp_path, monkeypatch):
     monkeypatch.setattr(webpage, "SETTINGS_FILE", Path(tmp_path) / "settings.json")
     monkeypatch.setattr(webpage, "FIRST_RUN_FILE", Path(tmp_path) / ".planes_setup_complete")
@@ -31,6 +35,8 @@ def reset_app_state(tmp_path, monkeypatch):
     ("value", "expected"),
     [("5", "5s"), ("65", "1m 5s"), ("3665", "1h 1m"), ("90061", "1d 1h 1m"), (None, "—")],
 )
+# --- Formatting, identifiers, and dashboard rendering ---
+
 def test_format_duration(value, expected):
     assert webpage.format_duration(value) == expected
 
@@ -79,6 +85,8 @@ def test_aircraft_rows_support_non_icao_ids():
     assert "/aircraft/~3b8c8c" in rows
     assert "ICAO 3B8C8C" in rows
 
+
+# --- Metadata and enrichment ---
 
 def test_fr24_live_identity_uses_local_feed(monkeypatch):
     monkeypatch.setattr(
@@ -202,6 +210,8 @@ def test_dashboard_handles_missing_type_without_using_source_type(monkeypatch):
     assert "Looking up" in html
 
 
+# --- Feed and session statistics ---
+
 def test_record_feed_success_collects_session_metrics():
     webpage.record_feed_success({"now": 1000, "aircraft": [
         {"hex": "4cad7d", "alt_baro": 30000, "gs": 400},
@@ -251,6 +261,8 @@ def test_statistics_contains_all_three_periods(monkeypatch):
     assert "Tracks created" in html
     assert "15 min messages" in html
 
+
+# --- Setup and settings ---
 
 def test_setup_marker_round_trip(tmp_path):
     webpage.FIRST_RUN_FILE = tmp_path / ".planes_setup_complete"
