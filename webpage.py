@@ -1,9 +1,7 @@
 import datetime as dt
 import html
-import ipaddress
 import json
 import logging
-import os
 import re
 import time
 from pathlib import Path
@@ -12,6 +10,9 @@ from urllib.parse import quote, urljoin, urlparse
 
 import fastapi
 import requests
+
+# Single-module application layout keeps receiver handling, enrichment, rendering,
+# browser behavior, and API routes together so the Pi deployment stays simple.
 from fastapi import Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,11 +34,15 @@ FR24_FEED_URL = "http://127.0.0.1:8754/flights.json"
 APP_VERSION = "0.0.5-test"
 FIRST_RUN_FILE = Path(".planes_setup_complete")
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s planes: %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s planes: %(message)s",
+)
 logger = logging.getLogger("planes")
 
 
 def load_settings() -> dict[str, Any]:
+    """Load local settings, apply defaults, and clamp user-configurable values."""
     settings = DEFAULT_SETTINGS.copy()
     try:
         raw = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
@@ -59,7 +64,9 @@ def load_settings() -> dict[str, Any]:
         refresh = DEFAULT_SETTINGS["refresh_seconds"]
     settings["refresh_seconds"] = max(2, min(60, refresh))
 
-    settings["asbdb_enabled"] = bool(settings.get("asbdb_enabled", DEFAULT_SETTINGS["asbdb_enabled"]))
+    settings["asbdb_enabled"] = bool(
+        settings.get("asbdb_enabled", DEFAULT_SETTINGS["asbdb_enabled"])
+    )
     try:
         cache_seconds = int(settings.get("asbdb_cache_seconds", DEFAULT_SETTINGS["asbdb_cache_seconds"]))
     except (TypeError, ValueError):
@@ -68,14 +75,17 @@ def load_settings() -> dict[str, Any]:
     return settings
 
 def setup_complete() -> bool:
+    """Return whether the first-run setup marker exists."""
     return FIRST_RUN_FILE.exists()
 
 
 def mark_setup_complete() -> None:
+    """Write the local first-run setup marker."""
     FIRST_RUN_FILE.write_text("Planes setup completed.\\n", encoding="utf-8")
 
 
 def setup_content() -> str:
+    """Render the first-run setup form and its browser-side behavior."""
     settings = load_settings()
     feed_url = clean(settings.get("aircraft_data_url", DEFAULT_SETTINGS["aircraft_data_url"]))
     refresh = settings["refresh_seconds"]
@@ -188,14 +198,13 @@ def setup_content() -> str:
     </script>'''
 
 
-AIRCRAFT_LOOKUP_BASE = "https://api.adsbdb.com/v0/aircraft/"
-
 
 def valid_aircraft_identifier(value: Any) -> bool:
+    """Return True for a valid readsb aircraft identifier."""
     return bool(re.fullmatch(r"~?[0-9a-f]{6}", str(value or "").strip().lower()))
 
 
-# Lightweight in-memory session metrics. These reset when Planes restarts.
+# Session metrics reset when Planes restarts; receiver-period totals come from readsb.
 PLANES_SESSION_STARTED = time.time()
 PLANES_SESSION_LAST_SNAPSHOT: Any = None
 PLANES_SESSION_SAMPLES = 0
@@ -209,6 +218,7 @@ PLANES_SESSION_FEED_INTERRUPTS = 0
 
 
 def record_feed_success(data: dict[str, Any]) -> None:
+    """Update session metrics from a successful receiver snapshot."""
     global PLANES_SESSION_LAST_SNAPSHOT, PLANES_SESSION_SAMPLES
     global PLANES_SESSION_AIRCRAFT_TOTAL, PLANES_SESSION_PEAK_AIRCRAFT
     global PLANES_SESSION_HIGHEST_ALTITUDE, PLANES_SESSION_FASTEST_SPEED
@@ -236,6 +246,7 @@ def record_feed_success(data: dict[str, Any]) -> None:
 
 
 def record_feed_failure() -> None:
+    """Record a transition from a healthy feed to an unavailable feed."""
     global PLANES_SESSION_FEED_UP, PLANES_SESSION_FEED_INTERRUPTS
     if PLANES_SESSION_FEED_UP:
         PLANES_SESSION_FEED_INTERRUPTS += 1
@@ -243,6 +254,7 @@ def record_feed_failure() -> None:
 
 
 def format_duration(seconds: float | int | None) -> str:
+    """Format seconds as a compact human-readable duration."""
     if seconds is None:
         return "—"
     total = max(0, int(seconds))
@@ -259,6 +271,7 @@ def format_duration(seconds: float | int | None) -> str:
 
 
 def format_number(value: Any) -> str:
+    """Format numeric values for display."""
     if isinstance(value, float):
         return f"{value:,.1f}"
     if isinstance(value, int):
@@ -267,10 +280,12 @@ def format_number(value: Any) -> str:
 
 
 def readsb_stats_url() -> str:
+    """Build the stats.json URL from the configured aircraft feed URL."""
     return urljoin(load_settings()["aircraft_data_url"], "stats.json")
 
 
 def get_readsb_stats() -> dict[str, Any] | None:
+    """Fetch receiver-period statistics from readsb."""
     try:
         response = requests.get(readsb_stats_url(), timeout=2)
         response.raise_for_status()
@@ -287,11 +302,13 @@ _fr24_live_cache: tuple[float, dict[str, dict[str, Any]]] = (0.0, {})
 
 
 def _normalise_live_hex(value: Any) -> str:
+    """Normalize a possible Mode-S value to six hexadecimal characters."""
     text = str(value or "").strip().lower().replace("0x", "")
     return text if re.fullmatch(r"[0-9a-f]{6}", text) else ""
 
 
 def _walk_json_dicts(value: Any):
+    """Yield every dictionary found inside nested JSON data."""
     if isinstance(value, dict):
         yield value
         for child in value.values():
@@ -302,6 +319,7 @@ def _walk_json_dicts(value: Any):
 
 
 def get_fr24_live_identities() -> dict[str, dict[str, Any]]:
+    """Read live aircraft identity data from the local FR24 feed."""
     global _fr24_live_cache
     now = time.time()
     if now - _fr24_live_cache[0] < 5:
@@ -342,11 +360,13 @@ def get_fr24_live_identities() -> dict[str, dict[str, Any]]:
 
 
 def fr24_live_identity(hex_code: str) -> dict[str, Any]:
+    """Return the cached FR24 identity for one aircraft."""
     safe_hex = str(hex_code or "").strip().lower().replace("0x", "")
     return dict(get_fr24_live_identities().get(safe_hex, {}))
 
 
 def _hexdb_aircraft_lookup(hex_code: str) -> dict[str, Any] | None:
+    """Look up aircraft metadata from HexDB as a fallback source."""
     url = HEXDB_AIRCRAFT_BASE + quote(hex_code, safe="")
     try:
         response = requests.get(url, timeout=2)
@@ -371,6 +391,7 @@ def _hexdb_aircraft_lookup(hex_code: str) -> dict[str, Any] | None:
 
 
 def aircraft_metadata_lookup(hex_code: str, callsign: str = "") -> dict[str, Any] | None:
+    """Look up and cache aircraft metadata from external sources."""
     hex_code = str(hex_code or "").strip().lower()
     if not re.fullmatch(r"[0-9a-f]{6}", hex_code):
         return None
@@ -416,6 +437,7 @@ def aircraft_metadata_lookup(hex_code: str, callsign: str = "") -> dict[str, Any
 
 
 def metadata_for_aircraft(hex_code: str, callsign: str = "") -> dict[str, Any]:
+    """Combine live FR24 identity with cached aircraft metadata."""
     live_identity = fr24_live_identity(hex_code)
     effective_callsign = str(callsign or live_identity.get("callsign") or "").strip()
     result = aircraft_metadata_lookup(hex_code, effective_callsign) or {}
@@ -431,10 +453,12 @@ def metadata_for_aircraft(hex_code: str, callsign: str = "") -> dict[str, Any]:
 
 
 def save_settings(settings: dict[str, Any]) -> None:
+    """Write application settings as formatted JSON."""
     SETTINGS_FILE.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 
 
 def validate_data_url(value: str) -> str:
+    """Validate an HTTP(S) aircraft-feed URL."""
     value = value.strip()
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -449,6 +473,7 @@ LAST_GOOD_AVAILABLE = False
 
 
 def get_aircraft_data() -> tuple[dict[str, Any], float | None]:
+    """Fetch live aircraft data and preserve the last good snapshot on failure."""
     global LAST_GOOD_DATA, LAST_GOOD_AVAILABLE
     settings = load_settings()
     try:
@@ -475,12 +500,14 @@ def get_aircraft_data() -> tuple[dict[str, Any], float | None]:
     return {"aircraft": []}, None
 
 def clean(value: Any, fallback: str = "—") -> str:
+    """Escape a value for safe insertion into generated HTML."""
     if value is None or value == "":
         return fallback
     return html.escape(str(value))
 
 
 def aircraft_rows(aircraft: list[dict[str, Any]]) -> str:
+    """Render dashboard aircraft rows from receiver data."""
     rows: list[str] = []
     for plane in aircraft:
         if not isinstance(plane, dict):
@@ -524,6 +551,7 @@ def aircraft_rows(aircraft: list[dict[str, Any]]) -> str:
     return "\n".join(rows)
 
 def page(title: str, content: str, active: str = "") -> str:
+    """Wrap page content in the shared Planes HTML shell."""
     settings = load_settings()
     refresh = max(2, min(60, int(settings.get("refresh_seconds", 5))))
     now = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -599,6 +627,7 @@ def page(title: str, content: str, active: str = "") -> str:
 
 
 def dashboard_content() -> str:
+    """Render the initial Dashboard and seed the browser with aircraft data."""
     settings = load_settings()
     refresh = settings["refresh_seconds"]
     data, elapsed = get_aircraft_data()
@@ -680,7 +709,7 @@ def dashboard_content() -> str:
         }}
         function renderRows() {{
           const q = search.value.trim().toLowerCase();
-          const searchTerms = [q, q.replace(/^icao\s+/, '')].filter(Boolean);
+          const searchTerms = [q, q.replace(/^icao\\s+/, '')].filter(Boolean);
           const key = sort.value;
           const hasMinAlt = minAltitude.value.trim() !== '';
           const hasMinSpd = minSpeed.value.trim() !== '';
@@ -856,6 +885,7 @@ def dashboard_content() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
+    """Serve the Dashboard page."""
     if not setup_complete():
         return page("Welcome to Planes", setup_content())
     return page("Aircraft Dashboard", dashboard_content(), "dashboard")
@@ -863,6 +893,7 @@ def read_root():
 
 @app.get("/api/dashboard-data")
 def dashboard_data(response: Response):
+    """Return current aircraft data and feed-health state as JSON."""
     response.headers["Cache-Control"] = "no-store"
     data, elapsed = get_aircraft_data()
     aircraft = data.get("aircraft", [])
@@ -876,6 +907,7 @@ def dashboard_data(response: Response):
 
 @app.get("/api/dashboard-table", response_class=HTMLResponse)
 def get_dashboard_table(response: Response):
+    """Return the current server-rendered aircraft table."""
     response.headers["Cache-Control"] = "no-store"
     data, _ = get_aircraft_data()
     return HTMLResponse(aircraft_rows(data.get("aircraft", [])))
@@ -883,6 +915,7 @@ def get_dashboard_table(response: Response):
 
 @app.get("/statistics", response_class=HTMLResponse)
 def read_statistics():
+    """Render live, Planes-session, and readsb-period statistics."""
     data, elapsed = get_aircraft_data()
     aircraft = [a for a in data.get("aircraft", []) if isinstance(a, dict)]
     altitudes = [a.get("alt_baro") for a in aircraft if isinstance(a.get("alt_baro"), (int, float))]
@@ -985,6 +1018,7 @@ _asbdb_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
 
 def asbdb_lookup(callsign: str) -> dict[str, Any] | None:
+    """Look up scheduled route information by callsign and cache the result."""
     settings = load_settings()
     if not settings.get("asbdb_enabled", True) or not callsign:
         return None
@@ -1013,6 +1047,7 @@ def asbdb_lookup(callsign: str) -> dict[str, Any] | None:
     return None
 
 def detail_fragment(hex_code: str) -> str:
+    """Render the live aircraft detail panel."""
     hex_code = str(hex_code or "").strip().lower()
     if not valid_aircraft_identifier(hex_code):
         return '<div class="notice error"><strong>Invalid aircraft identifier.</strong><p>Aircraft identifiers must be six hexadecimal characters, optionally prefixed with ~ for non-ICAO targets.</p></div>'
@@ -1135,6 +1170,7 @@ def detail_fragment(hex_code: str) -> str:
 
 @app.get("/aircraft/{hex_code}", response_class=HTMLResponse)
 def read_aircraft_details(hex_code: str):
+    """Serve the aircraft detail page."""
     safe_hex = str(hex_code or "").strip().lower()
     if not valid_aircraft_identifier(safe_hex):
         return page("Aircraft Details", '<section class="panel"><div class="notice error"><strong>Invalid aircraft identifier.</strong></div><a class="back-link" href="/">← Back to dashboard</a></section>')
@@ -1162,6 +1198,7 @@ def read_aircraft_details(hex_code: str):
 
 @app.get("/api/aircraft-metadata/{hex_code}")
 def get_aircraft_metadata(hex_code: str):
+    """Return cached aircraft metadata as JSON."""
     safe_hex = str(hex_code or "").strip().lower()
     if not valid_aircraft_identifier(safe_hex):
         return JSONResponse({"ok": False, "detail": "Invalid aircraft identifier."}, status_code=400)
@@ -1181,6 +1218,7 @@ def get_aircraft_metadata(hex_code: str):
 
 @app.get("/api/aircraft/{hex_code}", response_class=HTMLResponse)
 def get_aircraft_details_fragment(hex_code: str, response: Response):
+    """Return a refreshed aircraft detail HTML fragment."""
     response.headers["Cache-Control"] = "no-store"
     safe_hex = str(hex_code or "").strip().lower()
     if not valid_aircraft_identifier(safe_hex):
@@ -1193,6 +1231,7 @@ def get_aircraft_details_fragment(hex_code: str, response: Response):
 
 @app.get("/settings", response_class=HTMLResponse)
 def read_settings():
+    """Render the Settings page and its form handlers."""
     settings = load_settings()
     content = f'''<form id="settings-form" class="panel settings-form">
       <div><label for="aircraft-data-url">Aircraft data URL</label><input id="aircraft-data-url" name="aircraft_data_url" type="url" value="{clean(settings.get('aircraft_data_url'))}" required><p class="field-help">Usually the local readsb/tar1090 JSON endpoint.</p></div>
@@ -1239,6 +1278,7 @@ def read_settings():
 
 @app.get("/setup", response_class=HTMLResponse)
 def read_setup():
+    """Render first-run setup or a setup-complete message."""
     if setup_complete():
         return page("Setup complete", '<section class="panel"><h2>Setup already completed</h2><p>Use Settings to change the receiver URL, refresh interval, ASBDB or theme.</p><a class="button" href="/settings">Open Settings</a></section>')
     return page("Welcome to Planes", setup_content())
@@ -1246,11 +1286,13 @@ def read_setup():
 
 @app.get("/api/settings")
 def get_settings():
+    """Return current settings as JSON."""
     return load_settings()
 
 
 @app.get("/api/test-feed")
 def test_feed():
+    """Test the configured aircraft feed."""
     data, elapsed = get_aircraft_data()
     if elapsed is None:
         return JSONResponse({"detail": "Aircraft feed is unavailable or returned invalid JSON."}, status_code=502)
@@ -1259,6 +1301,7 @@ def test_feed():
 
 @app.get("/api/test-feed-url")
 def test_feed_url(url: str):
+    """Test an unsaved aircraft-feed URL."""
     try:
         clean_url = validate_data_url(url)
         started = time.monotonic()
@@ -1281,6 +1324,7 @@ def test_feed_url(url: str):
 
 @app.post("/api/setup")
 def finish_setup(payload: dict[str, Any]):
+    """Validate and save first-run setup values."""
     try:
         url = validate_data_url(str(payload.get("aircraft_data_url", "")))
         refresh = int(payload.get("refresh_seconds", 5))
@@ -1304,6 +1348,7 @@ def finish_setup(payload: dict[str, Any]):
 
 @app.post("/api/settings")
 def update_settings(payload: dict[str, Any]):
+    """Validate and save settings from the Settings page."""
     try:
         url = validate_data_url(str(payload.get("aircraft_data_url", "")))
         refresh = int(payload.get("refresh_seconds", 5))
@@ -1319,6 +1364,7 @@ def update_settings(payload: dict[str, Any]):
 
 @app.get("/documentation", response_class=HTMLResponse)
 def read_documentation():
+    """Render the built-in project documentation page."""
     content = '''<section class="panel prose">
       <p class="eyebrow">PLANES CODE DOCUMENTATION</p>
       <h2>Architecture</h2>
@@ -1456,22 +1502,18 @@ bash scripts/pi_smoke_test.sh</code></pre>
 # wait for a Dashboard refresh
 sudo systemctl start readsb</code></pre>
 
-      <h2>16. First-run setup</h2>
-      <p>On a new installation, Planes shows a setup screen before the Dashboard. It asks for the aircraft JSON URL, refresh interval, base theme and optional ASBDB lookups.</p>
-      <p><strong>Test feed</strong> checks the URL before it is saved. <strong>Save and open Planes</strong> stores the server settings, records that setup is complete and opens the Dashboard.</p>
-      <p>The completion marker is stored locally as <code>.planes_setup_complete</code> and is ignored by Git. Existing settings are prefilled so an existing installation can normally accept its current configuration and continue.</p>
-      <h2>17. Raspberry Pi testing</h2>
-      <p><strong>v0.0.5 audit fixes</strong>. This branch contains fixes found during manual post-release testing, including metadata enrichment, non-ICAO identifier support, dashboard search/favourite fixes and the reworked statistics periods. It should not be treated as the next release until the Pi test checklist passes.</p>
     </section>'''
     return page("Documentation", content, "documentation")
 
 @app.get("/about", response_class=HTMLResponse)
 def read_about():
+    """Render the About page."""
     content = '''<section class="panel prose"><h2>About Planes</h2><p>Planes is a small local web interface for an ADS-B receiver. It reads aircraft JSON from a configurable feed and presents live aircraft, statistics and detail pages.</p><h2>Data sources</h2><p>Live aircraft data comes from the configured receiver feed. Optional route information on detail pages comes from ASBDB and should be treated as supplementary scheduled-route information rather than a live position source.</p></section>'''
     return page("About", content, "about")
 
 
 @app.get("/contact", response_class=HTMLResponse)
 def read_contact():
+    """Render the Contact page."""
     content = '''<section class="panel prose"><h2>Contact</h2><p>For project issues, suggestions or code contributions, use the project repository.</p><p><a class="text-link" href="https://github.com/H-J-Wilson/planes" rel="noopener noreferrer">Open the Planes GitHub repository</a></p></section>'''
     return page("Contact", content)
