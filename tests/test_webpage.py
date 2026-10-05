@@ -1,3 +1,5 @@
+"""Regression tests for the Planes FastAPI application."""
+
 import sys
 import tempfile
 import unittest
@@ -10,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import webpage
 
 
+# These tests cover the FastAPI layer without depending on a running receiver.
 class PlanesTests(unittest.TestCase):
     def setUp(self):
         self.original_settings_file = webpage.SETTINGS_FILE
@@ -33,6 +36,7 @@ class PlanesTests(unittest.TestCase):
         webpage.LAST_GOOD_DATA = {"aircraft": []}
         webpage.LAST_GOOD_AVAILABLE = False
 
+    # --- Validation and rendering ---
     def test_validate_data_url(self):
         self.assertEqual(
             webpage.validate_data_url(" http://127.0.0.1:8504/data/aircraft.json "),
@@ -89,6 +93,7 @@ class PlanesTests(unittest.TestCase):
         tilde_rows = webpage.aircraft_rows([{"hex": "~3b8c8c", "gs": 10}])
         self.assertIn("/aircraft/~3b8c8c", tilde_rows)
 
+    # --- Receiver feed and metadata ---
     def test_feed_keeps_last_successful_data_after_failure(self):
         webpage.load_settings = lambda: dict(webpage.DEFAULT_SETTINGS)
 
@@ -230,6 +235,7 @@ class PlanesTests(unittest.TestCase):
         self.assertIn("TEST01", content)
         self.assertIn("Boeing", content)
 
+    # --- Statistics, setup, and API behavior ---
     def test_statistics_page_contains_session_and_readsb_period_sections(self):
         sample = {"aircraft": [{"hex": "abc123", "gs": 300, "alt_baro": 12000, "lat": 51.0, "lon": -1.0}]}
         webpage.load_settings = lambda: dict(webpage.DEFAULT_SETTINGS)
