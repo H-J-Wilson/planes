@@ -1,10 +1,10 @@
+"""Planes server entry point."""
+
 import uvicorn
-import webpage
 
-
-def main():
-    uvicorn.run(webpage.app, host="0.0.0.0", port=8000)
+from webpage import app
 
 
 if __name__ == "__main__":
-    main()
+    # Keep startup deliberately small; the FastAPI application owns all behavior.
+    uvicorn.run(app, host="0.0.0.0", port=8000)
