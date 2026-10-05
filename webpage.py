@@ -9,13 +9,13 @@ from typing import Any
 from urllib.parse import quote, urljoin, urlparse
 
 import fastapi
+from fastapi import Response
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 import requests
 
 # Single-module application layout keeps receiver handling, enrichment, rendering,
 # browser behavior, and API routes together so the Pi deployment stays simple.
-from fastapi import Response
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 app = fastapi.FastAPI(title="Planes Flight Tracker")
 app.mount("/static", StaticFiles(directory="static"), name="static")
