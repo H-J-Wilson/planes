@@ -11,9 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import webpage
 
 
-@pytest.fixture(autouse=True)
 # --- Shared test state ---
-
+@pytest.fixture(autouse=True)
 def reset_app_state(tmp_path, monkeypatch):
     monkeypatch.setattr(webpage, "SETTINGS_FILE", Path(tmp_path) / "settings.json")
     monkeypatch.setattr(webpage, "FIRST_RUN_FILE", Path(tmp_path) / ".planes_setup_complete")
@@ -31,12 +30,11 @@ def reset_app_state(tmp_path, monkeypatch):
     webpage.PLANES_SESSION_FEED_INTERRUPTS = 0
 
 
+# --- Formatting, identifiers, and dashboard rendering ---
 @pytest.mark.parametrize(
     ("value", "expected"),
     [("5", "5s"), ("65", "1m 5s"), ("3665", "1h 1m"), ("90061", "1d 1h 1m"), (None, "—")],
 )
-# --- Formatting, identifiers, and dashboard rendering ---
-
 def test_format_duration(value, expected):
     assert webpage.format_duration(value) == expected
 
@@ -87,8 +85,7 @@ def test_aircraft_rows_support_non_icao_ids():
 
 
 # --- Metadata and enrichment ---
-
-def test_fr24_live_identity_uses_local_feed(monkeypatch):
+def def test_fr24_live_identity_uses_local_feed(monkeypatch):
     monkeypatch.setattr(
         webpage.requests,
         "get",
@@ -211,8 +208,7 @@ def test_dashboard_handles_missing_type_without_using_source_type(monkeypatch):
 
 
 # --- Feed and session statistics ---
-
-def test_record_feed_success_collects_session_metrics():
+def def test_record_feed_success_collects_session_metrics():
     webpage.record_feed_success({"now": 1000, "aircraft": [
         {"hex": "4cad7d", "alt_baro": 30000, "gs": 400},
         {"hex": "3c6566", "alt_baro": 28000, "gs": 350},
@@ -263,8 +259,7 @@ def test_statistics_contains_all_three_periods(monkeypatch):
 
 
 # --- Setup and settings ---
-
-def test_setup_marker_round_trip(tmp_path):
+def def test_setup_marker_round_trip(tmp_path):
     webpage.FIRST_RUN_FILE = tmp_path / ".planes_setup_complete"
     assert not webpage.setup_complete()
     webpage.mark_setup_complete()
